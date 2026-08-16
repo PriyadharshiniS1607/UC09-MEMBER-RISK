@@ -6,6 +6,7 @@ import { Dashboard } from './pages/Dashboard';
 import { Members } from './pages/Members';
 import { MemberDetails } from './pages/MemberDetails';
 import { Interventions } from './pages/Interventions';
+import { Upload } from './pages/Upload';
 import { mockApiService } from './services/api';
 import { User } from './types';
 import { MOCK_USERS } from './mock/mockData';
@@ -70,6 +71,7 @@ export const App: React.FC = () => {
           <Route path="members" element={<Members />} />
           <Route path="members/:id" element={<MemberDetails />} />
           <Route path="interventions" element={<Interventions />} />
+          <Route path="upload" element={<Upload />} />
         </Route>
 
         {/* Catch-all */}

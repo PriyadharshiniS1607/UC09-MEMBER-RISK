@@ -154,10 +154,10 @@ export const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
             </button>
           </form>
 
-          {/* Security Note */}
+          {/* Prototype Notice */}
           <div className="mt-6 pt-4 border-t border-slate-800/80 flex items-center justify-center gap-2 text-slate-500 text-[11px]">
             <ShieldCheck className="w-4 h-4 text-teal-400" />
-            <span>Simulated HIPAA Secure Session Storage (Local Auth Context)</span>
+            <span>Synthetic data / prototype session (Local Auth Context)</span>
           </div>
         </div>
 

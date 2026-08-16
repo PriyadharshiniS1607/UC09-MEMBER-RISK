@@ -6,10 +6,11 @@ import {
   ClipboardCheck, 
   Activity, 
   TrendingDown, 
-  ArrowRight,
-  ShieldCheck,
-  HeartPulse,
-  UserCheck
+  ArrowRight, 
+  ShieldCheck, 
+  HeartPulse, 
+  UserCheck,
+  UploadCloud
 } from 'lucide-react';
 import { mockApiService } from '../services/api';
 import { Member, Intervention, PopulationMetrics } from '../types';
@@ -75,10 +76,17 @@ export const Dashboard: React.FC = () => {
               Continuous real-time risk stratification and early intervention orchestration to curb avoidable hospital readmissions.
             </p>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-3">
+            <Link
+              to="/upload"
+              className="inline-flex items-center gap-2 px-3.5 py-2.5 rounded-xl bg-teal-500/15 hover:bg-teal-500/25 text-teal-300 text-xs font-semibold border border-teal-500/30 transition-all shadow-sm"
+            >
+              <UploadCloud className="w-4 h-4 text-teal-400" />
+              <span>Ingest CSV</span>
+            </Link>
             <Link
               to="/members"
-              className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-white text-xs font-semibold border border-slate-700 transition-all shadow-sm"
+              className="inline-flex items-center gap-2 px-3.5 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-white text-xs font-semibold border border-slate-700 transition-all shadow-sm"
             >
               <Users className="w-4 h-4 text-teal-400" />
               <span>Explore Members</span>
