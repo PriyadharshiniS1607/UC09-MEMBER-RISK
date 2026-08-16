@@ -6,8 +6,9 @@ import {
   ClipboardList, 
   Activity, 
   LogOut, 
-  ShieldAlert,
-  HeartHandshake
+  HeartHandshake,
+  UploadCloud,
+  FlaskConical
 } from 'lucide-react';
 import { mockApiService } from '../../services/api';
 import { User } from '../../types';
@@ -44,6 +45,13 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentUser, onLogout }) => {
       path: '/interventions',
       icon: ClipboardList,
       badge: 'Active',
+      highlightBadge: false,
+    },
+    {
+      label: 'Data Ingestion (CSV)',
+      path: '/upload',
+      icon: UploadCloud,
+      badge: 'New',
       highlightBadge: true,
     },
   ];
@@ -94,7 +102,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentUser, onLogout }) => {
                   <span
                     className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${
                       item.highlightBadge
-                        ? 'bg-teal-500/20 text-teal-300'
+                        ? 'bg-teal-500/20 text-teal-300 border border-teal-500/30'
                         : 'bg-slate-800 text-slate-400'
                     }`}
                   >
@@ -142,9 +150,9 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentUser, onLogout }) => {
         )}
 
         <div className="flex items-center justify-between pt-1">
-          <div className="flex items-center gap-1.5 text-[11px] text-slate-500">
-            <ShieldAlert className="w-3.5 h-3.5 text-amber-400" />
-            <span>HIPAA Compliant</span>
+          <div className="flex items-center gap-1.5 text-[11px] text-amber-400/90" title="Synthetic data / prototype session">
+            <FlaskConical className="w-3.5 h-3.5 text-amber-400" />
+            <span>Prototype Session</span>
           </div>
           <button
             onClick={handleLogoutClick}

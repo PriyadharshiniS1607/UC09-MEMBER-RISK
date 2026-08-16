@@ -172,4 +172,61 @@ export const mockApiService = {
 
     return simulateDelay(updatedItem, 250);
   },
+
+  // CSV Data Ingestion Service (Simulating POST /upload)
+  async uploadMemberCsv(
+    file: File, 
+    options?: { simulateError?: boolean }
+  ): Promise<import('../types').UploadCsvResponse> {
+    // 1. Validation: Ensure file exists and is not empty
+    if (!file || file.size === 0) {
+      throw new Error('The selected CSV file is empty (0 bytes). Please select a valid population dataset.');
+    }
+
+    // 2. Validation: File extension must be .csv
+    if (!file.name.toLowerCase().endsWith('.csv')) {
+      throw new Error(`Unsupported file type: "${file.name}". Please upload a standard comma-separated (.csv) file.`);
+    }
+
+    // 3. Optional simulated failure for testing failure states
+    if (options?.simulateError) {
+      await simulateDelay(null, 600);
+      throw new Error('Simulated Ingestion Error: Schema validation failed. Column "member_id" or "demographics" was missing or corrupted.');
+    }
+
+    // 4. Inspect headers & row count (Metadata extraction only - NO risk calculation or ML preprocessing)
+    let headers: string[] = [];
+    let lineCount = 0;
+
+    try {
+      const text = await file.text();
+      const lines = text.split(/\r?\n/).filter(line => line.trim().length > 0);
+      lineCount = Math.max(0, lines.length - 1); // Exclude header row
+      if (lines.length > 0) {
+        headers = lines[0].split(',').map(h => h.trim().replace(/^["']|["']$/g, '')).filter(Boolean);
+      }
+    } catch {
+      lineCount = 150; // Fallback mock estimate if text reading is blocked
+      headers = ['member_id', 'age', 'gender', 'systolic_bp', 'hba1c', 'chronic_conditions', 'admissions_l12m'];
+    }
+
+    if (headers.length === 0) {
+      headers = ['member_id', 'age', 'gender', 'systolic_bp', 'hba1c', 'chronic_conditions'];
+    }
+
+    const response: import('../types').UploadCsvResponse = {
+      success: true,
+      message: 'Member cohort CSV successfully ingested and queued for backend risk scoring.',
+      filename: file.name,
+      fileSizeBytes: file.size,
+      recordsCount: lineCount > 0 ? lineCount : 120,
+      uploadedAt: new Date().toISOString(),
+      batchId: `BATCH-UC09-${Date.now().toString(36).toUpperCase()}`,
+      detectedHeaders: headers.slice(0, 10),
+      status: 'Ready for Model Scoring',
+      processingNote: 'File buffered in memory. Backend FastAPI ML prediction pipeline will calculate risk indices in Phase 2.',
+    };
+
+    return simulateDelay(response, 1000);
+  },
 };

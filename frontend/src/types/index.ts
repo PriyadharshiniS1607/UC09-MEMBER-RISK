@@ -115,3 +115,23 @@ export interface AuthState {
   isAuthenticated: boolean;
   token: string | null;
 }
+
+export interface UploadCsvResponse {
+  success: boolean;
+  message: string;
+  filename: string;
+  fileSizeBytes: number;
+  recordsCount: number;
+  uploadedAt: string;
+  batchId: string;
+  detectedHeaders?: string[];
+  status: 'Validated' | 'Ready for Model Scoring' | 'Failed';
+  processingNote?: string;
+}
+
+export interface UploadProgressState {
+  stage: 'idle' | 'validating' | 'uploading' | 'parsing_metadata' | 'success' | 'error';
+  progressPercentage: number;
+  currentMessage?: string;
+  error?: string;
+}
