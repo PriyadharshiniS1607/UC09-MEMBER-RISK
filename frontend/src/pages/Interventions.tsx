@@ -13,7 +13,7 @@ import {
   AlertCircle
 } from 'lucide-react';
 import { mockApiService } from '../services/api';
-import { Intervention, InterventionStatus, InterventionPriority, Member } from '../types';
+import { Intervention, InterventionStatus, InterventionPriority, InterventionCategory, Member } from '../types';
 import { RiskBadge } from '../components/common/RiskBadge';
 import { StatusBadge } from '../components/common/StatusBadge';
 import { Modal } from '../components/common/Modal';
@@ -26,12 +26,13 @@ export const Interventions: React.FC = () => {
   // Filters
   const [statusFilter, setStatusFilter] = useState<InterventionStatus | 'All'>('All');
   const [priorityFilter, setPriorityFilter] = useState<InterventionPriority | 'All'>('All');
+  const [categoryFilter, setCategoryFilter] = useState<InterventionCategory | 'All'>('All');
 
   // Modal State
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedMemberId, setSelectedMemberId] = useState('');
   const [newTitle, setNewTitle] = useState('');
-  const [newType, setNewType] = useState<Intervention['type']>('Medication Adherence Outreach');
+  const [newType, setNewType] = useState<InterventionCategory>('Clinical');
   const [newPriority, setNewPriority] = useState<InterventionPriority>('High');
   const [newDueDate, setNewDueDate] = useState('2026-08-25');
   const [newDescription, setNewDescription] = useState('');
@@ -46,6 +47,7 @@ export const Interventions: React.FC = () => {
           mockApiService.getInterventions({
             status: statusFilter,
             priority: priorityFilter,
+            category: categoryFilter,
           }),
           mockApiService.getMembers(),
         ]);
@@ -62,7 +64,7 @@ export const Interventions: React.FC = () => {
     };
 
     fetchData();
-  }, [statusFilter, priorityFilter]);
+  }, [statusFilter, priorityFilter, categoryFilter]);
 
   const handleUpdateStatus = async (id: string, newStatus: InterventionStatus) => {
     try {
@@ -123,13 +125,13 @@ export const Interventions: React.FC = () => {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <div className="flex items-center gap-2">
-            <h1 className="text-2xl font-extrabold text-white tracking-tight">Clinical Intervention Hub</h1>
+            <h1 className="text-2xl font-extrabold text-white tracking-tight">Clinical & SDOH Intervention Hub</h1>
             <span className="px-2.5 py-0.5 rounded-full bg-slate-800 border border-slate-700 text-teal-400 font-mono text-xs font-bold">
               {interventions.length} Tasks
             </span>
           </div>
           <p className="text-xs text-slate-400 mt-1">
-            Orchestrate and track proactive multidisciplinary clinical actions to mitigate member readmission risks.
+            Orchestrate multidisciplinary protocols spanning Clinical, Preventive Care, Transportation, Food Access, and Healthcare Access.
           </p>
         </div>
 
@@ -175,7 +177,7 @@ export const Interventions: React.FC = () => {
         </div>
       </div>
 
-      {/* Filter Control Bar */}
+      {/* Filter Control Bar (Status, Priority, Category) */}
       <div className="bg-slate-900/80 border border-slate-800 rounded-2xl p-4 shadow-lg flex flex-wrap items-center justify-between gap-4">
         {/* Status Filters */}
         <div className="flex items-center gap-2 overflow-x-auto">
@@ -195,9 +197,24 @@ export const Interventions: React.FC = () => {
           ))}
         </div>
 
-        {/* Priority Filter */}
-        <div className="flex items-center gap-2">
-          <Filter className="w-4 h-4 text-slate-400" />
+        {/* Priority & Category Dropdowns */}
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2">
+            <Filter className="w-4 h-4 text-slate-400" />
+            <select
+              value={categoryFilter}
+              onChange={(e) => setCategoryFilter(e.target.value as InterventionCategory | 'All')}
+              className="bg-slate-950 border border-slate-700 rounded-xl px-3 py-1.5 text-xs text-white focus:outline-none focus:border-teal-500"
+            >
+              <option value="All">All Categories</option>
+              <option value="Clinical">Clinical</option>
+              <option value="Preventive Care">Preventive Care</option>
+              <option value="Transportation / SDOH">Transportation / SDOH</option>
+              <option value="Food Access / Community Support">Food Access / Community Support</option>
+              <option value="Healthcare Access">Healthcare Access</option>
+            </select>
+          </div>
+
           <select
             value={priorityFilter}
             onChange={(e) => setPriorityFilter(e.target.value as InterventionPriority | 'All')}
@@ -217,13 +234,13 @@ export const Interventions: React.FC = () => {
         {loading ? (
           <div className="bg-slate-900/80 border border-slate-800 rounded-2xl p-12 text-center space-y-3">
             <Activity className="w-8 h-8 text-teal-400 animate-spin mx-auto" />
-            <p className="text-xs text-slate-400">Loading clinical interventions...</p>
+            <p className="text-xs text-slate-400">Loading interventions...</p>
           </div>
         ) : interventions.length === 0 ? (
           <div className="bg-slate-900/80 border border-slate-800 rounded-2xl p-12 text-center space-y-3">
             <AlertCircle className="w-10 h-10 text-slate-500 mx-auto" />
-            <h3 className="text-sm font-bold text-white">No interventions found</h3>
-            <p className="text-xs text-slate-400">Try changing the status or priority filters above.</p>
+            <h3 className="text-sm font-bold text-white">No matching interventions</h3>
+            <p className="text-xs text-slate-400">Try clearing or adjusting the category, status, or priority filters.</p>
           </div>
         ) : (
           interventions.map((intv) => (
@@ -301,7 +318,7 @@ export const Interventions: React.FC = () => {
                   <Link
                     to={`/members/${intv.memberId}`}
                     className="p-1.5 rounded-lg bg-slate-800 text-slate-300 hover:text-white hover:bg-slate-700 transition-colors"
-                    title="View Member Details"
+                    title="View Member Profile"
                   >
                     <ArrowRight className="w-4 h-4" />
                   </Link>
@@ -316,8 +333,8 @@ export const Interventions: React.FC = () => {
       <Modal
         isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}
-        title="Schedule Population Health Intervention"
-        subtitle="Initiate a targeted clinical protocol for a monitored member"
+        title="Schedule Care Intervention"
+        subtitle="Initiate a targeted clinical or SDOH protocol for a monitored member"
       >
         <form onSubmit={handleCreateIntervention} className="space-y-4">
           <div>
@@ -347,7 +364,7 @@ export const Interventions: React.FC = () => {
               required
               value={newTitle}
               onChange={(e) => setNewTitle(e.target.value)}
-              placeholder="e.g. At-Home Chronic Kidney Disease & Vitals Assessment"
+              placeholder="e.g. Non-Emergency Medical Transportation Setup"
               className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-teal-500"
             />
           </div>
@@ -359,15 +376,14 @@ export const Interventions: React.FC = () => {
               </label>
               <select
                 value={newType}
-                onChange={(e) => setNewType(e.target.value as Intervention['type'])}
+                onChange={(e) => setNewType(e.target.value as InterventionCategory)}
                 className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-teal-500"
               >
-                <option value="Medication Adherence Outreach">Medication Adherence Outreach</option>
-                <option value="Diabetic Care Management">Diabetic Care Management</option>
-                <option value="Telehealth Clinical Review">Telehealth Clinical Review</option>
-                <option value="In-Home Nurse Visit">In-Home Nurse Visit</option>
-                <option value="Cardiology Follow-Up">Cardiology Follow-Up</option>
-                <option value="Social Determinants Support">Social Determinants Support</option>
+                <option value="Clinical">Clinical</option>
+                <option value="Preventive Care">Preventive Care</option>
+                <option value="Transportation / SDOH">Transportation / SDOH</option>
+                <option value="Food Access / Community Support">Food Access / Community Support</option>
+                <option value="Healthcare Access">Healthcare Access</option>
               </select>
             </div>
 
@@ -403,14 +419,14 @@ export const Interventions: React.FC = () => {
 
           <div>
             <label className="block text-xs font-semibold text-slate-300 mb-1">
-              Intervention Rationale
+              Clinical / SDOH Rationale
             </label>
             <textarea
               required
               rows={2}
               value={newDescription}
               onChange={(e) => setNewDescription(e.target.value)}
-              placeholder="Clinical reasoning and objectives..."
+              placeholder="Reasoning and target objectives..."
               className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-teal-500"
             />
           </div>
@@ -424,7 +440,7 @@ export const Interventions: React.FC = () => {
               required
               value={newAction}
               onChange={(e) => setNewAction(e.target.value)}
-              placeholder="e.g. Schedule home care nurse visit for lab draw and adherence review"
+              placeholder="e.g. Issue county transit voucher for specialist follow-up"
               className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-teal-500"
             />
           </div>

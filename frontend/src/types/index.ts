@@ -1,14 +1,67 @@
-export type RiskLevel = 'High' | 'Medium' | 'Low';
+export type RiskLevel = 'Very High' | 'High' | 'Medium' | 'Low';
 
 export type InterventionStatus = 'Pending' | 'In Progress' | 'Completed' | 'Deferred';
 
 export type InterventionPriority = 'Urgent' | 'High' | 'Medium' | 'Standard';
 
+export type InterventionCategory = 
+  | 'Clinical' 
+  | 'Preventive Care' 
+  | 'Transportation / SDOH' 
+  | 'Food Access / Community Support' 
+  | 'Healthcare Access';
+
+export interface ShapDriver {
+  rank: number;
+  feature: string;
+  value: string;
+  shapValue: number; // e.g. +0.34 or -0.12
+  category: 'Health' | 'Utilization' | 'SDOH';
+  description: string;
+}
+
+export interface SdohIndicators {
+  countyFips: string;
+  countyName: string;
+  state: string;
+  sviScore: number; // 0.0 to 1.0 (CDC Social Vulnerability Index)
+  sviTier: 'Low' | 'Moderate' | 'High' | 'Very High';
+  transportationAccessScore: number; // 0 to 100
+  transportationNotes: string;
+  healthcareAccessScore: number; // 0 to 100
+  healthcareAccessNotes: string;
+  foodAccessScore: number; // 0 to 100
+  foodAccessNotes: string;
+}
+
+export interface UtilizationMetrics {
+  hospitalizationsLast12m: number;
+  erVisitsLast12m: number;
+  outpatientVisitsLast12m: number;
+  telehealthVisitsLast12m: number;
+  readmissionCount30d: number;
+}
+
+export interface RiskBreakdown {
+  healthRiskScore: number; // 0 to 100
+  utilizationRiskScore: number; // 0 to 100
+  sdohRiskScore: number; // 0 to 100
+  combinedRiskScore: number; // 0 to 100
+}
+
+export interface RecommendedIntervention {
+  id: string;
+  title: string;
+  category: InterventionCategory;
+  priority: InterventionPriority;
+  reason: string;
+}
+
 export interface RiskDriver {
   id: string;
   factor: string;
   category: 'Clinical' | 'Medication' | 'Utilization' | 'SDOH' | 'Vitals';
-  impactWeight: number; // e.g. 0.0 to 1.0 or percentage
+  impactWeight: number;
   description: string;
   trend: 'increasing' | 'stable' | 'decreasing';
 }
@@ -56,6 +109,11 @@ export interface Member {
   chronicConditions: ChronicCondition[];
   vitals: ClinicalVitals;
   riskSummary: RiskSummary;
+  riskBreakdown: RiskBreakdown;
+  sdohData: SdohIndicators;
+  utilizationData: UtilizationMetrics;
+  shapDrivers: ShapDriver[];
+  recommendedInterventions: RecommendedIntervention[];
   activeInterventionsCount: number;
   assignedCareManager: string;
   enrollmentStatus: 'Active' | 'Under Review' | 'Discharged';
@@ -68,13 +126,7 @@ export interface Intervention {
   memberCode: string;
   memberRiskLevel: RiskLevel;
   title: string;
-  type: 
-    | 'Medication Adherence Outreach' 
-    | 'Diabetic Care Management' 
-    | 'Telehealth Clinical Review' 
-    | 'In-Home Nurse Visit' 
-    | 'Cardiology Follow-Up' 
-    | 'Social Determinants Support';
+  type: InterventionCategory | string;
   description: string;
   priority: InterventionPriority;
   status: InterventionStatus;
@@ -88,6 +140,8 @@ export interface Intervention {
 
 export interface PopulationMetrics {
   totalMembers: number;
+  veryHighRiskCount: number;
+  veryHighRiskPercentage: number;
   highRiskCount: number;
   highRiskPercentage: number;
   mediumRiskCount: number;

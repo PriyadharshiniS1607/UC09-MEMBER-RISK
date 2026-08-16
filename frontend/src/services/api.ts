@@ -6,12 +6,12 @@ import {
   User, 
   RiskLevel, 
   InterventionStatus, 
-  InterventionPriority 
+  InterventionPriority,
+  InterventionCategory
 } from '../types';
 import { 
   MOCK_MEMBERS, 
   MOCK_INTERVENTIONS, 
-  MOCK_POPULATION_METRICS, 
   MOCK_USERS 
 } from '../mock/mockData';
 
@@ -34,11 +34,11 @@ apiClient.interceptors.request.use((config) => {
 });
 
 // Synthetic latency simulator helper
-const simulateDelay = <T>(data: T, ms: number = 300): Promise<T> => {
+const simulateDelay = <T>(data: T, ms: number = 250): Promise<T> => {
   return new Promise((resolve) => setTimeout(() => resolve(data), ms));
 };
 
-// In-memory working state for demo interactions (allows creating/updating interventions during session)
+// In-memory working state for demo interactions
 let dynamicMembers: Member[] = [...MOCK_MEMBERS];
 let dynamicInterventions: Intervention[] = [...MOCK_INTERVENTIONS];
 
@@ -67,32 +67,70 @@ export const mockApiService = {
     localStorage.removeItem('care_risk_user');
   },
 
-  // Population Analytics
+  // Population Analytics - Dynamic metrics calculation from existing mock data
   async getPopulationMetrics(): Promise<PopulationMetrics> {
-    return simulateDelay(MOCK_POPULATION_METRICS, 250);
+    const total = dynamicMembers.length;
+    const vHigh = dynamicMembers.filter(m => m.riskSummary.riskLevel === 'Very High').length;
+    const high = dynamicMembers.filter(m => m.riskSummary.riskLevel === 'High').length;
+    const med = dynamicMembers.filter(m => m.riskSummary.riskLevel === 'Medium').length;
+    const low = dynamicMembers.filter(m => m.riskSummary.riskLevel === 'Low').length;
+
+    const totalScoreSum = dynamicMembers.reduce((acc, m) => acc + m.riskSummary.overallRiskScore, 0);
+    const avgScore = total > 0 ? Math.round((totalScoreSum / total) * 10) / 10 : 0;
+
+    const activeCount = dynamicInterventions.filter(i => i.status === 'In Progress').length;
+    const pendingCount = dynamicInterventions.filter(i => i.status === 'Pending').length;
+    const completedCount = dynamicInterventions.filter(i => i.status === 'Completed').length;
+
+    const metrics: PopulationMetrics = {
+      totalMembers: total,
+      veryHighRiskCount: vHigh,
+      veryHighRiskPercentage: total > 0 ? Math.round((vHigh / total) * 1000) / 10 : 0,
+      highRiskCount: high,
+      highRiskPercentage: total > 0 ? Math.round((high / total) * 1000) / 10 : 0,
+      mediumRiskCount: med,
+      mediumRiskPercentage: total > 0 ? Math.round((med / total) * 1000) / 10 : 0,
+      lowRiskCount: low,
+      lowRiskPercentage: total > 0 ? Math.round((low / total) * 1000) / 10 : 0,
+      activeInterventionsCount: activeCount,
+      pendingInterventionsCount: pendingCount,
+      completedInterventionsCount: completedCount,
+      averageRiskScore: avgScore,
+      projectedReadmissionReductionPct: 18.5,
+    };
+
+    return simulateDelay(metrics, 200);
   },
 
-  // Members
+  // Members Retrieval with Filters, Search, and Sorting
   async getMembers(params?: {
     search?: string;
     riskLevel?: RiskLevel | 'All';
+    sdohTier?: string;
     condition?: string;
+    sortBy?: string;
   }): Promise<Member[]> {
     let result = [...dynamicMembers];
 
     if (params?.search) {
-      const q = params.search.toLowerCase();
+      const q = params.search.toLowerCase().trim();
       result = result.filter(
         (m) =>
           m.firstName.toLowerCase().includes(q) ||
           m.lastName.toLowerCase().includes(q) ||
           m.memberCode.toLowerCase().includes(q) ||
-          m.primaryCarePhysician.toLowerCase().includes(q)
+          m.primaryCarePhysician.toLowerCase().includes(q) ||
+          m.sdohData.countyName.toLowerCase().includes(q) ||
+          m.sdohData.countyFips.includes(q)
       );
     }
 
     if (params?.riskLevel && params.riskLevel !== 'All') {
       result = result.filter((m) => m.riskSummary.riskLevel === params.riskLevel);
+    }
+
+    if (params?.sdohTier && params.sdohTier !== 'All') {
+      result = result.filter((m) => m.sdohData.sviTier === params.sdohTier);
     }
 
     if (params?.condition && params.condition !== 'All') {
@@ -103,18 +141,81 @@ export const mockApiService = {
       );
     }
 
-    return simulateDelay(result, 300);
+    if (params?.sortBy) {
+      switch (params.sortBy) {
+        case 'riskScore_desc':
+          result.sort((a, b) => b.riskSummary.overallRiskScore - a.riskSummary.overallRiskScore);
+          break;
+        case 'riskScore_asc':
+          result.sort((a, b) => a.riskSummary.overallRiskScore - b.riskSummary.overallRiskScore);
+          break;
+        case 'name_asc':
+          result.sort((a, b) => a.lastName.localeCompare(b.lastName));
+          break;
+        case 'healthRisk_desc':
+          result.sort((a, b) => b.riskBreakdown.healthRiskScore - a.riskBreakdown.healthRiskScore);
+          break;
+        case 'utilizationRisk_desc':
+          result.sort((a, b) => b.riskBreakdown.utilizationRiskScore - a.riskBreakdown.utilizationRiskScore);
+          break;
+        case 'sdohRisk_desc':
+          result.sort((a, b) => b.riskBreakdown.sdohRiskScore - a.riskBreakdown.sdohRiskScore);
+          break;
+        default:
+          break;
+      }
+    } else {
+      // Default sort by risk score descending
+      result.sort((a, b) => b.riskSummary.overallRiskScore - a.riskSummary.overallRiskScore);
+    }
+
+    return simulateDelay(result, 250);
   },
 
   async getMemberById(id: string): Promise<Member | undefined> {
     const member = dynamicMembers.find((m) => m.id === id);
-    return simulateDelay(member, 250);
+    return simulateDelay(member, 200);
+  },
+
+  // Future Backend API Simulation: GET /members/{member_id}/explanation
+  async getMemberExplanation(memberId: string): Promise<{
+    member_id: string;
+    risk_score: number;
+    risk_category: RiskLevel;
+    risk_drivers: {
+      feature: string;
+      value: string | number;
+      shap_value: number;
+      rank: number;
+      category?: string;
+      description?: string;
+    }[];
+  } | undefined> {
+    const member = dynamicMembers.find((m) => m.id === memberId);
+    if (!member) return undefined;
+
+    const drivers = member.shapDrivers.map((d) => ({
+      feature: d.feature,
+      value: d.value,
+      shap_value: d.shapValue,
+      rank: d.rank,
+      category: d.category,
+      description: d.description,
+    }));
+
+    return simulateDelay({
+      member_id: member.id,
+      risk_score: member.riskSummary.overallRiskScore,
+      risk_category: member.riskSummary.riskLevel,
+      risk_drivers: drivers,
+    }, 200);
   },
 
   // Interventions
   async getInterventions(params?: {
     status?: InterventionStatus | 'All';
     priority?: InterventionPriority | 'All';
+    category?: InterventionCategory | 'All';
     memberId?: string;
   }): Promise<Intervention[]> {
     let result = [...dynamicInterventions];
@@ -131,7 +232,11 @@ export const mockApiService = {
       result = result.filter((i) => i.priority === params.priority);
     }
 
-    return simulateDelay(result, 300);
+    if (params?.category && params.category !== 'All') {
+      result = result.filter((i) => i.type === params.category);
+    }
+
+    return simulateDelay(result, 250);
   },
 
   async createIntervention(newIntervention: Omit<Intervention, 'id' | 'createdDate'>): Promise<Intervention> {
@@ -153,7 +258,7 @@ export const mockApiService = {
       return m;
     });
 
-    return simulateDelay(created, 350);
+    return simulateDelay(created, 300);
   },
 
   async updateInterventionStatus(id: string, status: InterventionStatus): Promise<Intervention | null> {
@@ -170,7 +275,7 @@ export const mockApiService = {
       return item;
     });
 
-    return simulateDelay(updatedItem, 250);
+    return simulateDelay(updatedItem, 200);
   },
 
   // CSV Data Ingestion Service (Simulating POST /upload)
