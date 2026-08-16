@@ -4,7 +4,7 @@ import {
   Search, 
   Sparkles, 
   Calendar,
-  CheckCircle2
+  Shield
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { User } from '../../types';
@@ -58,7 +58,7 @@ export const Header: React.FC<HeaderProps> = ({ currentUser }) => {
           type="text"
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
-          placeholder="Search by member name, ID, or condition..."
+          placeholder="Search by member name, ID, county, or FIPS..."
           className="w-full bg-slate-950/70 border border-slate-700/60 rounded-xl pl-10 pr-4 py-2 text-xs text-white placeholder-slate-400 focus:outline-none focus:border-teal-500 focus:ring-1 focus:ring-teal-500/50 transition-all"
         />
       </form>
@@ -71,10 +71,10 @@ export const Header: React.FC<HeaderProps> = ({ currentUser }) => {
           <span>{todayStr}</span>
         </div>
 
-        {/* Phase 1 Badge */}
+        {/* Prototype Badge */}
         <div className="flex items-center gap-1.5 bg-teal-500/10 border border-teal-500/30 text-teal-300 text-xs px-3 py-1.5 rounded-lg font-medium">
           <Sparkles className="w-3.5 h-3.5 text-teal-400 animate-spin" style={{ animationDuration: '8s' }} />
-          <span>Phase 1 Mock Engine</span>
+          <span>UC09 Risk Analytics Prototype</span>
         </div>
 
         {/* Notifications */}
@@ -129,7 +129,7 @@ export const Header: React.FC<HeaderProps> = ({ currentUser }) => {
         {currentUser && (
           <div className="flex items-center gap-2 pl-2 border-l border-slate-800">
             <div className="w-8 h-8 rounded-full bg-teal-600/30 text-teal-300 flex items-center justify-center font-bold text-xs border border-teal-500/40">
-              <CheckCircle2 className="w-4 h-4 text-teal-400" />
+              <Shield className="w-4 h-4 text-teal-400" />
             </div>
             <div className="hidden sm:block">
               <p className="text-xs font-bold text-white leading-tight">{currentUser.name.split(',')[0]}</p>

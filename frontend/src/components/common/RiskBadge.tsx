@@ -1,6 +1,6 @@
 import React from 'react';
 import { RiskLevel } from '../../types';
-import { AlertCircle, AlertTriangle, CheckCircle2 } from 'lucide-react';
+import { Flame, AlertCircle, AlertTriangle, CheckCircle2 } from 'lucide-react';
 
 interface RiskBadgeProps {
   level: RiskLevel;
@@ -16,6 +16,12 @@ export const RiskBadge: React.FC<RiskBadgeProps> = ({
   size = 'md' 
 }) => {
   const config = {
+    'Very High': {
+      bg: 'bg-purple-950/70 border-purple-500/50 text-purple-200 shadow-purple-950/40',
+      dot: 'bg-purple-400',
+      icon: Flame,
+      label: 'Very High Risk',
+    },
     High: {
       bg: 'bg-rose-500/15 border-rose-500/30 text-rose-300',
       dot: 'bg-rose-400',

@@ -6,9 +6,9 @@ import {
   ClipboardList, 
   Activity, 
   LogOut, 
+  Lock,
   HeartHandshake,
-  UploadCloud,
-  FlaskConical
+  UploadCloud
 } from 'lucide-react';
 import { mockApiService } from '../../services/api';
 import { User } from '../../types';
@@ -38,7 +38,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentUser, onLogout }) => {
       label: 'Member Population',
       path: '/members',
       icon: Users,
-      badge: '1.2k',
+      badge: 'Registry',
     },
     {
       label: 'Clinical Interventions',
@@ -51,7 +51,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentUser, onLogout }) => {
       label: 'Data Ingestion (CSV)',
       path: '/upload',
       icon: UploadCloud,
-      badge: 'New',
+      badge: 'CSV',
       highlightBadge: true,
     },
   ];
@@ -121,7 +121,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentUser, onLogout }) => {
             <span>Care Management Focus</span>
           </div>
           <p className="text-slate-400 text-[11px] leading-relaxed">
-            Prioritizing top 20% high-risk members for proactive outreach & hospital readmission prevention.
+            Combining individual health, utilization, and county-level SDOH indicators for proactive intervention.
           </p>
         </div>
       </div>
@@ -150,9 +150,9 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentUser, onLogout }) => {
         )}
 
         <div className="flex items-center justify-between pt-1">
-          <div className="flex items-center gap-1.5 text-[11px] text-amber-400/90" title="Synthetic data / prototype session">
-            <FlaskConical className="w-3.5 h-3.5 text-amber-400" />
-            <span>Prototype Session</span>
+          <div className="flex items-center gap-1.5 text-[11px] text-slate-400">
+            <Lock className="w-3.5 h-3.5 text-teal-400" />
+            <span>Privacy & Security</span>
           </div>
           <button
             onClick={handleLogoutClick}

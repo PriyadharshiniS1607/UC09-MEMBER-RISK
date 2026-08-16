@@ -29,6 +29,155 @@ export const MOCK_USERS: User[] = [
 
 export const MOCK_MEMBERS: Member[] = [
   {
+    id: 'mem-105',
+    memberCode: 'MBR-83194',
+    firstName: 'Beatrice',
+    lastName: 'Sterling',
+    age: 81,
+    gender: 'Female',
+    dob: '1945-07-30',
+    contactNumber: '+1 (555) 441-2098',
+    email: 'b.sterling@example.com',
+    address: '502 Lake Shore Drive, Chicago, IL 60611',
+    insurancePlan: 'Humana Gold Plus HMO',
+    primaryCarePhysician: 'Dr. Anita Desai, MD',
+    enrollmentStatus: 'Active',
+    assignedCareManager: 'Sarah Jenkins, MD',
+    activeInterventionsCount: 3,
+    vitals: {
+      bloodPressure: '162/98',
+      heartRateBpm: 92,
+      bmi: 33.1,
+      hba1c: 8.8,
+      cholesterolMgl: 260,
+      lastUpdated: '2026-08-13',
+    },
+    chronicConditions: [
+      { name: 'Atrial Fibrillation', diagnosedDate: '2015-08-14', severity: 'Severe', icd10Code: 'I48.91' },
+      { name: 'Peripheral Vascular Disease', diagnosedDate: '2018-12-01', severity: 'Severe', icd10Code: 'I73.9' },
+      { name: 'Type 2 Diabetes', diagnosedDate: '2010-04-19', severity: 'Moderate', icd10Code: 'E11.9' },
+      { name: 'History of Falls & Fragility', diagnosedDate: '2024-02-15', severity: 'Severe', icd10Code: 'R29.6' }
+    ],
+    riskSummary: {
+      overallRiskScore: 94,
+      riskLevel: 'Very High',
+      hospitalAdmissionRiskPct: 88,
+      edVisitRiskPct: 91,
+      medicationAdherenceRiskPct: 78,
+      lastAssessedDate: '2026-08-15',
+      trendDirection: 'up',
+      topDrivers: [
+        {
+          id: 'drv-10',
+          factor: 'High Fall Risk with Anticoagulant Therapy (Apixaban)',
+          category: 'Clinical',
+          impactWeight: 0.40,
+          description: 'High risk of catastrophic intracranial hemorrhage in event of unassisted fall.',
+          trend: 'increasing',
+        },
+        {
+          id: 'drv-11',
+          factor: 'Complex Polypharmacy (11 Daily Active Prescriptions)',
+          category: 'Medication',
+          impactWeight: 0.35,
+          description: 'Frequent confusion regarding morning vs. bedtime dosette distribution.',
+          trend: 'increasing',
+        },
+        {
+          id: 'drv-12',
+          factor: 'Social Isolation & Limited Home Health Aide Hours',
+          category: 'SDOH',
+          impactWeight: 0.25,
+          description: 'Lives alone with caregiver present only 2 days per week.',
+          trend: 'increasing',
+        }
+      ],
+    },
+    riskBreakdown: {
+      healthRiskScore: 92,
+      utilizationRiskScore: 96,
+      sdohRiskScore: 88,
+      combinedRiskScore: 94,
+    },
+    sdohData: {
+      countyFips: '17031',
+      countyName: 'Cook County',
+      state: 'IL',
+      sviScore: 0.89,
+      sviTier: 'Very High',
+      transportationAccessScore: 35,
+      transportationNotes: 'Limited mobility; relies on municipal transit with long wait times',
+      healthcareAccessScore: 42,
+      healthcareAccessNotes: 'High appointment lead times for vascular specialists in area',
+      foodAccessScore: 38,
+      foodAccessNotes: 'Low proximity to fresh produce markets; high reliance on processed goods',
+    },
+    utilizationData: {
+      hospitalizationsLast12m: 4,
+      erVisitsLast12m: 7,
+      outpatientVisitsLast12m: 14,
+      telehealthVisitsLast12m: 2,
+      readmissionCount30d: 2,
+    },
+    shapDrivers: [
+      {
+        rank: 1,
+        feature: 'Anticoagulant + Fall History Risk',
+        value: 'Present (Apixaban + Fall in 6m)',
+        shapValue: +0.38,
+        category: 'Health',
+        description: 'Co-occurrence of high fall risk and blood thinner medication increases acute bleeding probability.'
+      },
+      {
+        rank: 2,
+        feature: '30-Day Hospital Readmission Rate',
+        value: '2 Inpatient Admissions',
+        shapValue: +0.31,
+        category: 'Utilization',
+        description: 'Frequent hospital discharges without stabilized post-acute transitions.'
+      },
+      {
+        rank: 3,
+        feature: 'County SVI Vulnerability Index',
+        value: '0.89 (Cook County, FIPS 17031)',
+        shapValue: +0.22,
+        category: 'SDOH',
+        description: 'High socio-economic vulnerability score in local geographic block.'
+      },
+      {
+        rank: 4,
+        feature: 'Transportation Access Score',
+        value: '35 / 100 Index',
+        shapValue: +0.15,
+        category: 'SDOH',
+        description: 'Severe transit difficulty for specialist outpatient visits.'
+      }
+    ],
+    recommendedInterventions: [
+      {
+        id: 'rec-101',
+        title: 'Fall Prevention Home Safety & Physical Therapy Evaluation',
+        category: 'Clinical',
+        priority: 'Urgent',
+        reason: 'Multiple fall incidents combined with active Apixaban anticoagulant prescription.'
+      },
+      {
+        id: 'rec-102',
+        title: 'Non-Emergency Medical Transportation (NEMT) Pass',
+        category: 'Transportation / SDOH',
+        priority: 'High',
+        reason: 'Low transit access score (35/100) causing missed vascular follow-ups.'
+      },
+      {
+        id: 'rec-103',
+        title: 'Medication Organizer & Pharmacy Blister Packaging',
+        category: 'Preventive Care',
+        priority: 'High',
+        reason: 'Polypharmacy complexity with 11 active daily prescriptions.'
+      }
+    ]
+  },
+  {
     id: 'mem-101',
     memberCode: 'MBR-98241',
     firstName: 'Eleanor',
@@ -101,6 +250,82 @@ export const MOCK_MEMBERS: Member[] = [
         }
       ],
     },
+    riskBreakdown: {
+      healthRiskScore: 88,
+      utilizationRiskScore: 92,
+      sdohRiskScore: 78,
+      combinedRiskScore: 89,
+    },
+    sdohData: {
+      countyFips: '17031',
+      countyName: 'Cook County',
+      state: 'IL',
+      sviScore: 0.76,
+      sviTier: 'High',
+      transportationAccessScore: 40,
+      transportationNotes: '12 miles from specialist clinic; lacks personal vehicle',
+      healthcareAccessScore: 58,
+      healthcareAccessNotes: 'Moderate access to community primary care clinics',
+      foodAccessScore: 45,
+      foodAccessNotes: 'Moderate access to fresh food options via local markets',
+    },
+    utilizationData: {
+      hospitalizationsLast12m: 3,
+      erVisitsLast12m: 5,
+      outpatientVisitsLast12m: 11,
+      telehealthVisitsLast12m: 4,
+      readmissionCount30d: 1,
+    },
+    shapDrivers: [
+      {
+        rank: 1,
+        feature: 'Glycated Hemoglobin (HbA1c)',
+        value: '9.2% (Uncontrolled)',
+        shapValue: +0.36,
+        category: 'Health',
+        description: 'High HbA1c correlates with microvascular complications and acute CHF exacerbations.'
+      },
+      {
+        rank: 2,
+        feature: 'Emergency Department Visits (60d)',
+        value: '2 Visits',
+        shapValue: +0.28,
+        category: 'Utilization',
+        description: 'Frequent ED use for acute dyspnea and hypertension spikes.'
+      },
+      {
+        rank: 3,
+        feature: 'Medication Refill Gap (Lisinopril)',
+        value: '45 Days Past Due',
+        shapValue: +0.21,
+        category: 'Health',
+        description: 'Omission of cardiac meds destabilizes blood pressure control.'
+      },
+      {
+        rank: 4,
+        feature: 'Distance to Primary Care',
+        value: '12.4 Miles',
+        shapValue: +0.14,
+        category: 'SDOH',
+        description: 'Geographic barrier to routine clinical follow-up.'
+      }
+    ],
+    recommendedInterventions: [
+      {
+        id: 'rec-104',
+        title: 'Urgent Home Health Nurse Vitals & Med Box Setup',
+        category: 'Clinical',
+        priority: 'Urgent',
+        reason: 'HbA1c at 9.2% with medication refill gap of 45 days.'
+      },
+      {
+        id: 'rec-105',
+        title: 'Diabetic Nutrition & Grocery Assistance Program',
+        category: 'Food Access / Community Support',
+        priority: 'High',
+        reason: 'SVI food insecurity index indicates difficulty accessing low-glycemic foods.'
+      }
+    ]
   },
   {
     id: 'mem-102',
@@ -157,6 +382,74 @@ export const MOCK_MEMBERS: Member[] = [
         }
       ],
     },
+    riskBreakdown: {
+      healthRiskScore: 84,
+      utilizationRiskScore: 80,
+      sdohRiskScore: 75,
+      combinedRiskScore: 82,
+    },
+    sdohData: {
+      countyFips: '17089',
+      countyName: 'Kane County',
+      state: 'IL',
+      sviScore: 0.71,
+      sviTier: 'High',
+      transportationAccessScore: 50,
+      transportationNotes: 'Moderate transit access; relies on family members for hospital visits',
+      healthcareAccessScore: 62,
+      healthcareAccessNotes: 'Pulmonology clinic located within 8 miles',
+      foodAccessScore: 55,
+      foodAccessNotes: 'Adequate access to local grocery chains',
+    },
+    utilizationData: {
+      hospitalizationsLast12m: 2,
+      erVisitsLast12m: 4,
+      outpatientVisitsLast12m: 8,
+      telehealthVisitsLast12m: 3,
+      readmissionCount30d: 1,
+    },
+    shapDrivers: [
+      {
+        rank: 1,
+        feature: 'COPD Exacerbation Frequency',
+        value: '2 Exacerbations in 12m',
+        shapValue: +0.41,
+        category: 'Health',
+        description: 'Frequent respiratory drops require emergency steroid bursts.'
+      },
+      {
+        rank: 2,
+        feature: 'DME Telemetry Sync Disconnection',
+        value: '30 Days Inactive',
+        shapValue: +0.29,
+        category: 'Utilization',
+        description: 'Absence of daily BiPAP compliance logging.'
+      },
+      {
+        rank: 3,
+        feature: 'County Air Quality Vulnerability',
+        value: 'Kane County (FIPS 17089)',
+        shapValue: +0.18,
+        category: 'SDOH',
+        description: 'Elevated particulate matter increases respiratory distress episodes.'
+      }
+    ],
+    recommendedInterventions: [
+      {
+        id: 'rec-106',
+        title: 'COPD Action Plan & BiPAP Telemetry Sync Check',
+        category: 'Clinical',
+        priority: 'High',
+        reason: 'SpO2 instability and 30-day telemetry outage.'
+      },
+      {
+        id: 'rec-107',
+        title: 'In-Home Oxygen & Air Filtration Unit Delivery',
+        category: 'Healthcare Access',
+        priority: 'Medium',
+        reason: 'Air quality vulnerability in Kane County FIPS 17089.'
+      }
+    ]
   },
   {
     id: 'mem-103',
@@ -213,119 +506,67 @@ export const MOCK_MEMBERS: Member[] = [
         }
       ],
     },
-  },
-  {
-    id: 'mem-104',
-    memberCode: 'MBR-44910',
-    firstName: 'David',
-    lastName: 'Kowalski',
-    age: 64,
-    gender: 'Male',
-    dob: '1962-02-19',
-    contactNumber: '+1 (555) 732-9011',
-    email: 'd.kowalski@example.com',
-    address: '3200 Elm Street, Naperville, IL 60540',
-    insurancePlan: 'UnitedHealthcare Choice Premier',
-    primaryCarePhysician: 'Dr. James Thorne, MD',
-    enrollmentStatus: 'Active',
-    assignedCareManager: 'Elena Rostova, RN',
-    activeInterventionsCount: 0,
-    vitals: {
-      bloodPressure: '122/76',
-      heartRateBpm: 68,
-      bmi: 24.8,
-      hba1c: 5.6,
-      cholesterolMgl: 172,
-      lastUpdated: '2026-07-28',
+    riskBreakdown: {
+      healthRiskScore: 52,
+      utilizationRiskScore: 48,
+      sdohRiskScore: 62,
+      combinedRiskScore: 54,
     },
-    chronicConditions: [
-      { name: 'Mild Osteoarthritis', diagnosedDate: '2023-04-10', severity: 'Mild', icd10Code: 'M19.90' }
+    sdohData: {
+      countyFips: '17031',
+      countyName: 'Cook County',
+      state: 'IL',
+      sviScore: 0.58,
+      sviTier: 'Moderate',
+      transportationAccessScore: 68,
+      transportationNotes: 'Good bus line proximity; low transit barriers',
+      healthcareAccessScore: 70,
+      healthcareAccessNotes: 'Multiple urban health centers within 3 miles',
+      foodAccessScore: 60,
+      foodAccessNotes: 'Moderate access to fresh food markets',
+    },
+    utilizationData: {
+      hospitalizationsLast12m: 1,
+      erVisitsLast12m: 2,
+      outpatientVisitsLast12m: 6,
+      telehealthVisitsLast12m: 5,
+      readmissionCount30d: 0,
+    },
+    shapDrivers: [
+      {
+        rank: 1,
+        feature: 'Overdue Preventive Diabetes Screenings',
+        value: '60 Days Overdue',
+        shapValue: +0.25,
+        category: 'Health',
+        description: 'Delay in annual podiatry and retinal exams.'
+      },
+      {
+        rank: 2,
+        feature: 'Metformin Gastrointestinal Side Effects',
+        value: 'Moderate GI Sensitivity',
+        shapValue: +0.18,
+        category: 'Health',
+        description: 'GI discomfort leads to skipped evening doses.'
+      },
+      {
+        rank: 3,
+        feature: 'Outpatient Clinic Attendance Rate',
+        value: '85% Attendance',
+        shapValue: -0.12,
+        category: 'Utilization',
+        description: 'Consistent attendance at primary care appointments lowers risk.'
+      }
     ],
-    riskSummary: {
-      overallRiskScore: 22,
-      riskLevel: 'Low',
-      hospitalAdmissionRiskPct: 8,
-      edVisitRiskPct: 12,
-      medicationAdherenceRiskPct: 5,
-      lastAssessedDate: '2026-08-11',
-      trendDirection: 'stable',
-      topDrivers: [
-        {
-          id: 'drv-09',
-          factor: 'Routine Preventive Screening Maintenance',
-          category: 'Clinical',
-          impactWeight: 0.60,
-          description: 'Up-to-date on all primary care checkups, immunizations, and lipid panels.',
-          trend: 'stable',
-        }
-      ],
-    },
-  },
-  {
-    id: 'mem-105',
-    memberCode: 'MBR-83194',
-    firstName: 'Beatrice',
-    lastName: 'Sterling',
-    age: 81,
-    gender: 'Female',
-    dob: '1945-07-30',
-    contactNumber: '+1 (555) 441-2098',
-    email: 'b.sterling@example.com',
-    address: '502 Lake Shore Drive, Chicago, IL 60611',
-    insurancePlan: 'Humana Gold Plus HMO',
-    primaryCarePhysician: 'Dr. Anita Desai, MD',
-    enrollmentStatus: 'Active',
-    assignedCareManager: 'Sarah Jenkins, MD',
-    activeInterventionsCount: 3,
-    vitals: {
-      bloodPressure: '162/98',
-      heartRateBpm: 92,
-      bmi: 33.1,
-      hba1c: 8.8,
-      cholesterolMgl: 260,
-      lastUpdated: '2026-08-13',
-    },
-    chronicConditions: [
-      { name: 'Atrial Fibrillation', diagnosedDate: '2015-08-14', severity: 'Severe', icd10Code: 'I48.91' },
-      { name: 'Peripheral Vascular Disease', diagnosedDate: '2018-12-01', severity: 'Severe', icd10Code: 'I73.9' },
-      { name: 'Type 2 Diabetes', diagnosedDate: '2010-04-19', severity: 'Moderate', icd10Code: 'E11.9' },
-      { name: 'History of Falls & Fragility', diagnosedDate: '2024-02-15', severity: 'Severe', icd10Code: 'R29.6' }
-    ],
-    riskSummary: {
-      overallRiskScore: 94,
-      riskLevel: 'High',
-      hospitalAdmissionRiskPct: 88,
-      edVisitRiskPct: 91,
-      medicationAdherenceRiskPct: 78,
-      lastAssessedDate: '2026-08-15',
-      trendDirection: 'up',
-      topDrivers: [
-        {
-          id: 'drv-10',
-          factor: 'High Fall Risk with Anticoagulant Therapy (Apixaban)',
-          category: 'Clinical',
-          impactWeight: 0.40,
-          description: 'High risk of catastrophic intracranial hemorrhage in event of unassisted fall.',
-          trend: 'increasing',
-        },
-        {
-          id: 'drv-11',
-          factor: 'Complex Polypharmacy (11 Daily Active Prescriptions)',
-          category: 'Medication',
-          impactWeight: 0.35,
-          description: 'Frequent confusion regarding morning vs. bedtime dosette distribution.',
-          trend: 'increasing',
-        },
-        {
-          id: 'drv-12',
-          factor: 'Social Isolation & Limited Home Health Aide Hours',
-          category: 'SDOH',
-          impactWeight: 0.25,
-          description: 'Lives alone with caregiver present only 2 days per week.',
-          trend: 'increasing',
-        }
-      ],
-    },
+    recommendedInterventions: [
+      {
+        id: 'rec-108',
+        title: 'Diabetic Retinal & Foot Exam Scheduling Outreach',
+        category: 'Preventive Care',
+        priority: 'Medium',
+        reason: '60 days overdue for annual diabetic preventive checkups.'
+      }
+    ]
   },
   {
     id: 'mem-106',
@@ -374,6 +615,159 @@ export const MOCK_MEMBERS: Member[] = [
         }
       ],
     },
+    riskBreakdown: {
+      healthRiskScore: 46,
+      utilizationRiskScore: 42,
+      sdohRiskScore: 56,
+      combinedRiskScore: 48,
+    },
+    sdohData: {
+      countyFips: '17031',
+      countyName: 'Cook County',
+      state: 'IL',
+      sviScore: 0.52,
+      sviTier: 'Moderate',
+      transportationAccessScore: 72,
+      transportationNotes: 'Proximity to public transit subway stops',
+      healthcareAccessScore: 75,
+      healthcareAccessNotes: 'Well served by urban health system providers',
+      foodAccessScore: 65,
+      foodAccessNotes: 'Good access to local grocery options',
+    },
+    utilizationData: {
+      hospitalizationsLast12m: 0,
+      erVisitsLast12m: 2,
+      outpatientVisitsLast12m: 5,
+      telehealthVisitsLast12m: 3,
+      readmissionCount30d: 0,
+    },
+    shapDrivers: [
+      {
+        rank: 1,
+        feature: 'Asthma Maintenance Inhaler Adherence',
+        value: '62% Refill Rate',
+        shapValue: +0.22,
+        category: 'Health',
+        description: 'Irregular use of maintenance steroid inhaler increases risk of acute attacks.'
+      },
+      {
+        rank: 2,
+        feature: 'Emergency Room Asthma Visits',
+        value: '2 Visits in 12m',
+        shapValue: +0.16,
+        category: 'Utilization',
+        description: 'Acute exacerbations managed in ED setting.'
+      }
+    ],
+    recommendedInterventions: [
+      {
+        id: 'rec-109',
+        title: 'Maintenance Inhaler Refill & Usage Coaching',
+        category: 'Clinical',
+        priority: 'Standard',
+        reason: 'Spacer technique demonstration and 90-day mail order setup.'
+      }
+    ]
+  },
+  {
+    id: 'mem-104',
+    memberCode: 'MBR-44910',
+    firstName: 'David',
+    lastName: 'Kowalski',
+    age: 64,
+    gender: 'Male',
+    dob: '1962-02-19',
+    contactNumber: '+1 (555) 732-9011',
+    email: 'd.kowalski@example.com',
+    address: '3200 Elm Street, Naperville, IL 60540',
+    insurancePlan: 'UnitedHealthcare Choice Premier',
+    primaryCarePhysician: 'Dr. James Thorne, MD',
+    enrollmentStatus: 'Active',
+    assignedCareManager: 'Elena Rostova, RN',
+    activeInterventionsCount: 0,
+    vitals: {
+      bloodPressure: '122/76',
+      heartRateBpm: 68,
+      bmi: 24.8,
+      hba1c: 5.6,
+      cholesterolMgl: 172,
+      lastUpdated: '2026-07-28',
+    },
+    chronicConditions: [
+      { name: 'Mild Osteoarthritis', diagnosedDate: '2023-04-10', severity: 'Mild', icd10Code: 'M19.90' }
+    ],
+    riskSummary: {
+      overallRiskScore: 22,
+      riskLevel: 'Low',
+      hospitalAdmissionRiskPct: 8,
+      edVisitRiskPct: 12,
+      medicationAdherenceRiskPct: 5,
+      lastAssessedDate: '2026-08-11',
+      trendDirection: 'stable',
+      topDrivers: [
+        {
+          id: 'drv-09',
+          factor: 'Routine Preventive Screening Maintenance',
+          category: 'Clinical',
+          impactWeight: 0.60,
+          description: 'Up-to-date on all primary care checkups, immunizations, and lipid panels.',
+          trend: 'stable',
+        }
+      ],
+    },
+    riskBreakdown: {
+      healthRiskScore: 20,
+      utilizationRiskScore: 18,
+      sdohRiskScore: 28,
+      combinedRiskScore: 22,
+    },
+    sdohData: {
+      countyFips: '17043',
+      countyName: 'DuPage County',
+      state: 'IL',
+      sviScore: 0.18,
+      sviTier: 'Low',
+      transportationAccessScore: 92,
+      transportationNotes: 'High mobility; owns personal vehicle with seamless transit',
+      healthcareAccessScore: 88,
+      healthcareAccessNotes: 'Abundant primary care & specialist coverage in DuPage County',
+      foodAccessScore: 90,
+      foodAccessNotes: 'High access to fresh produce and organic food markets',
+    },
+    utilizationData: {
+      hospitalizationsLast12m: 0,
+      erVisitsLast12m: 0,
+      outpatientVisitsLast12m: 3,
+      telehealthVisitsLast12m: 1,
+      readmissionCount30d: 0,
+    },
+    shapDrivers: [
+      {
+        rank: 1,
+        feature: 'Primary Care Wellness Visit Compliance',
+        value: 'Complete / Annual',
+        shapValue: -0.28,
+        category: 'Health',
+        description: 'Proactive primary care visits significantly lower acute hospitalization risk.'
+      },
+      {
+        rank: 2,
+        feature: 'County SVI Vulnerability Index',
+        value: '0.18 (DuPage County, FIPS 17043)',
+        shapValue: -0.20,
+        category: 'SDOH',
+        description: 'Low socio-economic vulnerability score in resident county.'
+      }
+    ],
+    recommendedInterventions: [
+      {
+        id: 'rec-110',
+        title: 'Annual Physical & Immunization Wellness Reminder',
+        category: 'Preventive Care',
+        priority: 'Standard',
+        reason: 'Routine annual preventive health maintenance.'
+      }
+    ]
   }
 ];
 
@@ -385,7 +779,7 @@ export const MOCK_INTERVENTIONS: Intervention[] = [
     memberCode: 'MBR-98241',
     memberRiskLevel: 'High',
     title: 'Urgent Home Health Nurse Vitals & Med Box Setup',
-    type: 'In-Home Nurse Visit',
+    type: 'Clinical',
     description: 'Dispatch clinical nurse specialist to perform in-person blood pressure check, reconcile cardiac medications, and organize automated pill dispenser.',
     priority: 'Urgent',
     status: 'In Progress',
@@ -405,7 +799,7 @@ export const MOCK_INTERVENTIONS: Intervention[] = [
     memberCode: 'MBR-98241',
     memberRiskLevel: 'High',
     title: 'Non-Emergency Medical Transportation Setup (NEMT)',
-    type: 'Social Determinants Support',
+    type: 'Transportation / SDOH',
     description: 'Coordinate county subsidized transit vouchers and dedicated medical taxi for upcoming cardiology appointment on Aug 24.',
     priority: 'High',
     status: 'Pending',
@@ -419,9 +813,9 @@ export const MOCK_INTERVENTIONS: Intervention[] = [
     memberId: 'mem-105',
     memberName: 'Beatrice Sterling',
     memberCode: 'MBR-83194',
-    memberRiskLevel: 'High',
+    memberRiskLevel: 'Very High',
     title: 'Fall Prevention Home Safety & Physical Therapy Evaluation',
-    type: 'In-Home Nurse Visit',
+    type: 'Clinical',
     description: 'Assess bathroom grab bars, non-slip flooring, and evaluate mobility aids. Consult with PT for assistive walking device fitting.',
     priority: 'Urgent',
     status: 'In Progress',
@@ -435,9 +829,9 @@ export const MOCK_INTERVENTIONS: Intervention[] = [
     memberId: 'mem-105',
     memberName: 'Beatrice Sterling',
     memberCode: 'MBR-83194',
-    memberRiskLevel: 'High',
+    memberRiskLevel: 'Very High',
     title: 'Anticoagulation Therapy & INR Telehealth Protocol',
-    type: 'Telehealth Clinical Review',
+    type: 'Clinical',
     description: 'Telehealth review of bruising symptoms, diet vitamin K interactions, and confirm lab draw schedule.',
     priority: 'High',
     status: 'Pending',
@@ -453,7 +847,7 @@ export const MOCK_INTERVENTIONS: Intervention[] = [
     memberCode: 'MBR-77319',
     memberRiskLevel: 'High',
     title: 'COPD Action Plan & BiPAP Telemetry Sync Check',
-    type: 'Telehealth Clinical Review',
+    type: 'Healthcare Access',
     description: 'Confirm adherence to daily dual-bronchodilator regimen and verify continuous pulse oximeter data transfer.',
     priority: 'High',
     status: 'In Progress',
@@ -469,7 +863,7 @@ export const MOCK_INTERVENTIONS: Intervention[] = [
     memberCode: 'MBR-61502',
     memberRiskLevel: 'Medium',
     title: 'Diabetic Retinal & Foot Exam Scheduling Outreach',
-    type: 'Diabetic Care Management',
+    type: 'Preventive Care',
     description: 'Assist member in booking annual dilated eye examination with in-network optometrist and podiatrist.',
     priority: 'Medium',
     status: 'Completed',
@@ -490,7 +884,7 @@ export const MOCK_INTERVENTIONS: Intervention[] = [
     memberCode: 'MBR-55219',
     memberRiskLevel: 'Medium',
     title: 'Maintenance Inhaler Refill & Usage Coaching',
-    type: 'Medication Adherence Outreach',
+    type: 'Clinical',
     description: 'Pharmacist tele-consultation to demonstrate spacer technique and enroll in 90-day mail order delivery.',
     priority: 'Standard',
     status: 'Pending',
@@ -503,15 +897,17 @@ export const MOCK_INTERVENTIONS: Intervention[] = [
 
 export const MOCK_POPULATION_METRICS: PopulationMetrics = {
   totalMembers: 1248,
+  veryHighRiskCount: 187,
+  veryHighRiskPercentage: 15.0,
   highRiskCount: 284,
   highRiskPercentage: 22.8,
   mediumRiskCount: 492,
   mediumRiskPercentage: 39.4,
-  lowRiskCount: 472,
-  lowRiskPercentage: 37.8,
+  lowRiskCount: 285,
+  lowRiskPercentage: 22.8,
   activeInterventionsCount: 142,
   pendingInterventionsCount: 68,
   completedInterventionsCount: 412,
-  averageRiskScore: 58.4,
+  averageRiskScore: 61.2,
   projectedReadmissionReductionPct: 18.5,
 };
