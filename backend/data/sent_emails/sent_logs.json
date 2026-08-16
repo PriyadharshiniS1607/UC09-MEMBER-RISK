@@ -1,0 +1,23 @@
+[
+  {
+    "timestamp": "2026-08-16T18:00:19.784481",
+    "to": "admin@healthfirst.org",
+    "subject": "Member Risk Panel Weekly Cohort Summary Digest",
+    "filename": "email_20260816_180019_member_risk_panel_weekly_cohort_summary_digest.html",
+    "attachments": []
+  },
+  {
+    "timestamp": "2026-08-16T18:00:19.733448",
+    "to": "e.rostova@healthfirst.org",
+    "subject": "Care Intervention Action Required: Eleanor Vance (High)",
+    "filename": "email_20260816_180019_care_intervention_action_required_eleanor_vance_high.html",
+    "attachments": []
+  },
+  {
+    "timestamp": "2026-08-16T18:00:19.712681",
+    "to": "s.jenkins@healthfirst.org",
+    "subject": "Clinical Risk Alert: Very High Risk patient (Beatrice Sterling)",
+    "filename": "email_20260816_180019_clinical_risk_alert_very_high_risk_patient_beatrice_sterling.html",
+    "attachments": []
+  }
+]
