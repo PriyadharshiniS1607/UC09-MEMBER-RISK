@@ -1,25 +1,37 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.api.auth import router as auth_router
 from app.services.email import email_router
-
+from app.api.member import router as member_router
+from app.api.prediction import router as prediction_router
 app = FastAPI(
     title="Member Risk Analytics Backend",
-    description="UC09 Social Determinants of Health (SDOH) Clinical Decision Support System Backend",
-    version="1.0.0"
+    description=(
+        "UC09 Social Determinants of Health "
+        "(SDOH) Clinical Decision Support System Backend"
+    ),
+    version="1.0.0",
 )
 
-# Set up CORS middleware to allow requests from the React frontend
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # For prototype purposes; configure appropriately for production
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+#MemberAPIs
+app.include_router(member_router)
+#Prediction APIs
+app.include_router(prediction_router)
+# Authentication APIs
+app.include_router(auth_router)
 
-# Register the email service endpoints
+# Email notification APIs
 app.include_router(email_router)
+
 
 @app.get("/")
 def read_root():
@@ -28,6 +40,9 @@ def read_root():
         "service": "UC09 Member Risk Analytics API",
         "endpoints": {
             "root": "/",
-            "email_service": "/api/email"
-        }
+            "auth_login": "/auth/login",
+            "auth_register": "/auth/register",
+            "auth_me": "/auth/me",
+            "email_service": "/api/email",
+        },
     }
