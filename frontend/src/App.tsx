@@ -7,7 +7,7 @@ import { Members } from './pages/Members';
 import { MemberDetails } from './pages/MemberDetails';
 import { Interventions } from './pages/Interventions';
 import { Upload } from './pages/Upload';
-import { mockApiService } from './services/api';
+import { apiService } from './services/api';
 import { User } from './types';
 import { MOCK_USERS } from './mock/mockData';
 
@@ -17,7 +17,7 @@ export const App: React.FC = () => {
 
   useEffect(() => {
     const initAuth = async () => {
-      const stored = await mockApiService.getCurrentUser();
+      const stored = await apiService.getCurrentUser();
       if (stored) {
         setCurrentUser(stored);
       } else {

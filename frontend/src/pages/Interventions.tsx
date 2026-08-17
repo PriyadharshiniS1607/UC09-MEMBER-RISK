@@ -1,27 +1,30 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { 
   Filter, 
   Plus, 
   CheckCircle2, 
   PlayCircle, 
-  Activity, 
   Calendar, 
   ArrowRight,
   Flame,
   CheckCircle,
-  AlertCircle
+  ClipboardList
 } from 'lucide-react';
-import { mockApiService } from '../services/api';
+import { apiService } from '../services/api';
 import { Intervention, InterventionStatus, InterventionPriority, InterventionCategory, Member } from '../types';
 import { RiskBadge } from '../components/common/RiskBadge';
 import { StatusBadge } from '../components/common/StatusBadge';
 import { Modal } from '../components/common/Modal';
+import { LoadingState } from '../components/common/LoadingState';
+import { ErrorState } from '../components/common/ErrorState';
+import { EmptyState } from '../components/common/EmptyState';
 
 export const Interventions: React.FC = () => {
   const [interventions, setInterventions] = useState<Intervention[]>([]);
   const [members, setMembers] = useState<Member[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   // Filters
   const [statusFilter, setStatusFilter] = useState<InterventionStatus | 'All'>('All');
@@ -39,36 +42,38 @@ export const Interventions: React.FC = () => {
   const [newAction, setNewAction] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
-  useEffect(() => {
-    const fetchData = async () => {
-      setLoading(true);
-      try {
-        const [intvData, membersData] = await Promise.all([
-          mockApiService.getInterventions({
-            status: statusFilter,
-            priority: priorityFilter,
-            category: categoryFilter,
-          }),
-          mockApiService.getMembers(),
-        ]);
-        setInterventions(intvData);
-        setMembers(membersData);
-        if (membersData.length > 0 && !selectedMemberId) {
-          setSelectedMemberId(membersData[0].id);
-        }
-      } catch (err) {
-        console.error('Error loading interventions:', err);
-      } finally {
-        setLoading(false);
+  const fetchData = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const [intvData, membersData] = await Promise.all([
+        apiService.getInterventions({
+          status: statusFilter,
+          priority: priorityFilter,
+          category: categoryFilter,
+        }),
+        apiService.getMembers(),
+      ]);
+      setInterventions(intvData);
+      setMembers(membersData);
+      if (membersData.length > 0 && !selectedMemberId) {
+        setSelectedMemberId(membersData[0].id);
       }
-    };
+    } catch (err) {
+      console.error('Error loading interventions:', err);
+      setError('Unable to load clinical interventions. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  }, [statusFilter, priorityFilter, categoryFilter, selectedMemberId]);
 
+  useEffect(() => {
     fetchData();
-  }, [statusFilter, priorityFilter, categoryFilter]);
+  }, [fetchData]);
 
   const handleUpdateStatus = async (id: string, newStatus: InterventionStatus) => {
     try {
-      const updated = await mockApiService.updateInterventionStatus(id, newStatus);
+      const updated = await apiService.updateInterventionStatus(id, newStatus);
       if (updated) {
         setInterventions((prev) =>
           prev.map((item) => (item.id === id ? updated : item))
@@ -86,7 +91,7 @@ export const Interventions: React.FC = () => {
 
     setSubmitting(true);
     try {
-      const created = await mockApiService.createIntervention({
+      const created = await apiService.createIntervention({
         memberId: targetMember.id,
         memberName: `${targetMember.firstName} ${targetMember.lastName}`,
         memberCode: targetMember.memberCode,
@@ -115,6 +120,12 @@ export const Interventions: React.FC = () => {
     }
   };
 
+  const handleResetFilters = () => {
+    setStatusFilter('All');
+    setPriorityFilter('All');
+    setCategoryFilter('All');
+  };
+
   const urgentCount = interventions.filter((i) => i.priority === 'Urgent' || i.priority === 'High').length;
   const inProgressCount = interventions.filter((i) => i.status === 'In Progress').length;
   const completedCount = interventions.filter((i) => i.status === 'Completed').length;
@@ -125,10 +136,12 @@ export const Interventions: React.FC = () => {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <div className="flex items-center gap-2">
-            <h1 className="text-2xl font-extrabold text-white tracking-tight">Clinical & SDOH Intervention Hub</h1>
-            <span className="px-2.5 py-0.5 rounded-full bg-slate-800 border border-slate-700 text-teal-400 font-mono text-xs font-bold">
-              {interventions.length} Tasks
-            </span>
+            <h1 className="text-2xl font-extrabold text-white tracking-tight">Clinical &amp; SDOH Intervention Hub</h1>
+            {!loading && !error && (
+              <span className="px-2.5 py-0.5 rounded-full bg-slate-800 border border-slate-700 text-teal-400 font-mono text-xs font-bold">
+                {interventions.length} Tasks
+              </span>
+            )}
           </div>
           <p className="text-xs text-slate-400 mt-1">
             Orchestrate multidisciplinary protocols spanning Clinical, Preventive Care, Transportation, Food Access, and Healthcare Access.
@@ -137,7 +150,7 @@ export const Interventions: React.FC = () => {
 
         <button
           onClick={() => setIsModalOpen(true)}
-          className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-teal-500 hover:bg-teal-400 text-slate-950 text-xs font-bold transition-all shadow-lg shadow-teal-500/20 shrink-0"
+          className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-teal-500 hover:bg-teal-400 text-slate-950 text-xs font-bold transition-all shadow-lg shadow-teal-500/20 shrink-0 cursor-pointer"
         >
           <Plus className="w-4 h-4" />
           <span>New Intervention</span>
@@ -186,7 +199,7 @@ export const Interventions: React.FC = () => {
             <button
               key={status}
               onClick={() => setStatusFilter(status)}
-              className={`px-3 py-1 rounded-lg text-xs font-semibold transition-all ${
+              className={`px-3 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
                 statusFilter === status
                   ? 'bg-teal-500/20 text-teal-300 border border-teal-500/40 shadow-sm'
                   : 'bg-slate-950/60 border border-slate-800 text-slate-400 hover:text-white hover:bg-slate-800'
@@ -229,18 +242,32 @@ export const Interventions: React.FC = () => {
         </div>
       </div>
 
-      {/* Interventions List */}
+      {/* Interventions List with Loading / Error / Empty States */}
       <div className="space-y-3">
         {loading ? (
-          <div className="bg-slate-900/80 border border-slate-800 rounded-2xl p-12 text-center space-y-3">
-            <Activity className="w-8 h-8 text-teal-400 animate-spin mx-auto" />
-            <p className="text-xs text-slate-400">Loading interventions...</p>
+          <LoadingState
+            type="table-skeleton"
+            message="Loading clinical &amp; SDOH interventions..."
+            rows={4}
+          />
+        ) : error ? (
+          <div className="p-8">
+            <ErrorState
+              title="Unable to Retrieve Interventions"
+              message={error}
+              onRetry={fetchData}
+              actionText="Retry Interventions Load"
+            />
           </div>
         ) : interventions.length === 0 ? (
-          <div className="bg-slate-900/80 border border-slate-800 rounded-2xl p-12 text-center space-y-3">
-            <AlertCircle className="w-10 h-10 text-slate-500 mx-auto" />
-            <h3 className="text-sm font-bold text-white">No matching interventions</h3>
-            <p className="text-xs text-slate-400">Try clearing or adjusting the category, status, or priority filters.</p>
+          <div className="p-8">
+            <EmptyState
+              icon={ClipboardList}
+              title="No Interventions Available"
+              message="No interventions match the selected status, priority, or category filters."
+              actionText="Reset Filters"
+              onAction={handleResetFilters}
+            />
           </div>
         ) : (
           interventions.map((intv) => (
@@ -300,7 +327,7 @@ export const Interventions: React.FC = () => {
                   {intv.status !== 'Completed' && (
                     <button
                       onClick={() => handleUpdateStatus(intv.id, 'Completed')}
-                      className="px-3 py-1 rounded-lg bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border border-emerald-500/30 text-xs font-semibold flex items-center gap-1.5 transition-colors"
+                      className="px-3 py-1 rounded-lg bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border border-emerald-500/30 text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
                     >
                       <CheckCircle className="w-3.5 h-3.5" />
                       <span>Complete Task</span>
@@ -309,7 +336,7 @@ export const Interventions: React.FC = () => {
                   {intv.status === 'Pending' && (
                     <button
                       onClick={() => handleUpdateStatus(intv.id, 'In Progress')}
-                      className="px-3 py-1 rounded-lg bg-sky-500/15 hover:bg-sky-500/25 text-sky-300 border border-sky-500/30 text-xs font-semibold flex items-center gap-1.5 transition-colors"
+                      className="px-3 py-1 rounded-lg bg-sky-500/15 hover:bg-sky-500/25 text-sky-300 border border-sky-500/30 text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
                     >
                       <PlayCircle className="w-3.5 h-3.5" />
                       <span>Start Outreach</span>
@@ -449,14 +476,14 @@ export const Interventions: React.FC = () => {
             <button
               type="button"
               onClick={() => setIsModalOpen(false)}
-              className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-400 hover:text-white transition-colors"
+              className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-400 hover:text-white transition-colors cursor-pointer"
             >
               Cancel
             </button>
             <button
               type="submit"
               disabled={submitting}
-              className="px-4 py-2 rounded-xl bg-teal-500 hover:bg-teal-400 text-slate-950 text-xs font-bold transition-all shadow-lg shadow-teal-500/20 disabled:opacity-50"
+              className="px-4 py-2 rounded-xl bg-teal-500 hover:bg-teal-400 text-slate-950 text-xs font-bold transition-all shadow-lg shadow-teal-500/20 disabled:opacity-50 cursor-pointer"
             >
               {submitting ? 'Dispatching...' : 'Dispatch Intervention'}
             </button>
@@ -466,3 +493,5 @@ export const Interventions: React.FC = () => {
     </div>
   );
 };
+
+export default Interventions;

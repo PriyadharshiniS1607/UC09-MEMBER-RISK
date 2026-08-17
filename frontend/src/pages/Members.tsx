@@ -1,22 +1,25 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { 
   Search, 
   ArrowRight, 
-  Activity, 
-  AlertCircle,
   ArrowUpDown,
-  MapPin
+  MapPin,
+  Users
 } from 'lucide-react';
-import { mockApiService } from '../services/api';
+import { apiService } from '../services/api';
 import { Member, RiskLevel, InterventionPriority } from '../types';
 import { RiskBadge } from '../components/common/RiskBadge';
 import { StatusBadge } from '../components/common/StatusBadge';
+import { LoadingState } from '../components/common/LoadingState';
+import { ErrorState } from '../components/common/ErrorState';
+import { EmptyState } from '../components/common/EmptyState';
 
 export const Members: React.FC = () => {
   const [searchParams, setSearchParams] = useSearchParams();
   const [members, setMembers] = useState<Member[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   const initialSearch = searchParams.get('q') || '';
   const initialRisk = (searchParams.get('risk') as RiskLevel | 'All') || 'All';
@@ -26,26 +29,28 @@ export const Members: React.FC = () => {
   const [selectedSdohTier, setSelectedSdohTier] = useState<string>('All');
   const [sortBy, setSortBy] = useState<string>('riskScore_desc');
 
-  useEffect(() => {
-    const fetchMembers = async () => {
-      setLoading(true);
-      try {
-        const data = await mockApiService.getMembers({
-          search: searchQuery,
-          riskLevel: selectedRisk,
-          sdohTier: selectedSdohTier,
-          sortBy: sortBy,
-        });
-        setMembers(data);
-      } catch (err) {
-        console.error('Error loading members:', err);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchMembers();
+  const fetchMembers = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const data = await apiService.getMembers({
+        search: searchQuery,
+        riskLevel: selectedRisk,
+        sdohTier: selectedSdohTier,
+        sortBy: sortBy,
+      });
+      setMembers(data);
+    } catch (err) {
+      console.error('Error loading members:', err);
+      setError('Unable to load member registry. Please check your connection and try again.');
+    } finally {
+      setLoading(false);
+    }
   }, [searchQuery, selectedRisk, selectedSdohTier, sortBy]);
+
+  useEffect(() => {
+    fetchMembers();
+  }, [fetchMembers]);
 
   const handleRiskTabChange = (risk: RiskLevel | 'All') => {
     setSelectedRisk(risk);
@@ -67,6 +72,14 @@ export const Members: React.FC = () => {
     setSearchParams(searchParams);
   };
 
+  const handleResetFilters = () => {
+    setSearchQuery('');
+    setSelectedRisk('All');
+    setSelectedSdohTier('All');
+    setSortBy('riskScore_desc');
+    setSearchParams({});
+  };
+
   return (
     <div className="space-y-6">
       {/* Page Header */}
@@ -74,9 +87,11 @@ export const Members: React.FC = () => {
         <div>
           <div className="flex items-center gap-2">
             <h1 className="text-2xl font-extrabold text-white tracking-tight">Member Population Registry</h1>
-            <span className="px-2.5 py-0.5 rounded-full bg-slate-800 border border-slate-700 text-teal-400 font-mono text-xs font-bold">
-              {members.length} Monitored Members
-            </span>
+            {!loading && !error && (
+              <span className="px-2.5 py-0.5 rounded-full bg-slate-800 border border-slate-700 text-teal-400 font-mono text-xs font-bold">
+                {members.length} Monitored Members
+              </span>
+            )}
           </div>
           <p className="text-xs text-slate-400 mt-1">
             Multidisciplinary cohort registry integrated across clinical, utilization, and county-level SDOH risk factors.
@@ -84,7 +99,7 @@ export const Members: React.FC = () => {
         </div>
       </div>
 
-      {/* Task 5: Controls Toolbar (Search, Risk Filter, SDOH Filter, Sorting) */}
+      {/* Controls Toolbar (Search, Risk Filter, SDOH Filter, Sorting) */}
       <div className="bg-slate-900/80 border border-slate-800 rounded-2xl p-4 shadow-lg space-y-4">
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
           {/* Search Input */}
@@ -162,27 +177,39 @@ export const Members: React.FC = () => {
         </div>
       </div>
 
-      {/* Task 5: Members Table with Health, Utilization, SDOH Risk Columns */}
+      {/* Members Table with States */}
       <div className="bg-slate-900/80 border border-slate-800 rounded-2xl overflow-hidden shadow-lg">
         {loading ? (
-          <div className="p-12 text-center space-y-3">
-            <Activity className="w-8 h-8 text-teal-400 animate-spin mx-auto" />
-            <p className="text-xs text-slate-400">Filtering population registry...</p>
+          <LoadingState 
+            type="table-skeleton" 
+            message="Filtering population registry..." 
+            rows={6}
+          />
+        ) : error ? (
+          <div className="p-8">
+            <ErrorState
+              title="Unable to Retrieve Members"
+              message={error}
+              onRetry={fetchMembers}
+              actionText="Retry Registry Load"
+            />
           </div>
         ) : members.length === 0 ? (
-          <div className="p-12 text-center space-y-3">
-            <AlertCircle className="w-10 h-10 text-slate-500 mx-auto" />
-            <h3 className="text-sm font-bold text-white">No matching members found</h3>
-            <p className="text-xs text-slate-400 max-w-sm mx-auto">
-              Try adjusting your search terms, risk tier tabs, or SDOH vulnerability filters.
-            </p>
+          <div className="p-8">
+            <EmptyState
+              icon={Users}
+              title="No Matching Members Found"
+              message="No member records match your current search query, risk tier selection, or SDOH filter."
+              actionText="Reset Filters"
+              onAction={handleResetFilters}
+            />
           </div>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-left border-collapse">
               <thead>
                 <tr className="border-b border-slate-800 bg-slate-950/50 text-[11px] font-bold uppercase tracking-wider text-slate-400">
-                  <th className="py-3.5 px-4">Member Info & Geography</th>
+                  <th className="py-3.5 px-4">Member Info &amp; Geography</th>
                   <th className="py-3.5 px-4 text-center">Combined Score</th>
                   <th className="py-3.5 px-4">Risk Category</th>
                   <th className="py-3.5 px-4">Health Risk</th>
@@ -194,7 +221,6 @@ export const Members: React.FC = () => {
               </thead>
               <tbody className="divide-y divide-slate-800/70 text-xs">
                 {members.map((m) => {
-                  // Primary intervention priority for member
                   const topPriority: InterventionPriority = 
                     m.riskSummary.riskLevel === 'Very High' ? 'Urgent' : 
                     m.riskSummary.riskLevel === 'High' ? 'High' : 
@@ -303,3 +329,5 @@ export const Members: React.FC = () => {
     </div>
   );
 };
+
+export default Members;

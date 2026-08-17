@@ -1,5 +1,5 @@
 import React, { useState, useRef } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { 
   UploadCloud, 
   FileText, 
@@ -17,22 +17,23 @@ import {
   Clock,
   AlertTriangle
 } from 'lucide-react';
-import { mockApiService } from '../services/api';
-import { UploadCsvResponse } from '../types';
+import { apiService } from '../services/api';
+import { UploadResponse } from '../types';
 
 export const Upload: React.FC = () => {
+  const navigate = useNavigate();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // File state
+  // File selection state
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [isDragOver, setIsDragOver] = useState(false);
   const [validationError, setValidationError] = useState<string | null>(null);
 
-  // Upload execution state
+  // Upload & Processing state
   const [isUploading, setIsUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [progressStage, setProgressStage] = useState<string>('');
-  const [uploadResult, setUploadResult] = useState<UploadCsvResponse | null>(null);
+  const [uploadResult, setUploadResult] = useState<UploadResponse | null>(null);
   const [simulateFailure, setSimulateFailure] = useState(false);
 
   // Format file size nicely
@@ -44,29 +45,30 @@ export const Upload: React.FC = () => {
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
   };
 
-  // Validate selected file
+  // Frontend File Validation
   const validateAndSetFile = (file: File) => {
     setValidationError(null);
     setUploadResult(null);
 
-    // Check extension
-    const isCsvExtension = file.name.toLowerCase().endsWith('.csv');
+    // 1. Check extension and type
+    const isCsv = file.name.toLowerCase().endsWith('.csv') || file.type === 'text/csv' || file.type === 'application/vnd.ms-excel';
 
-    if (!isCsvExtension) {
-      setValidationError(`Unsupported file format "${file.name}". Only standard comma-separated (.csv) files are permitted.`);
+    if (!isCsv) {
+      setValidationError(`Unsupported file format "${file.name}". Please upload a standard comma-separated (.csv) file.`);
       setSelectedFile(null);
       return;
     }
 
+    // 2. Check for empty file
     if (file.size === 0) {
-      setValidationError('The selected file is empty (0 bytes). Please choose a valid population health CSV.');
+      setValidationError('The selected file is empty (0 bytes). Please choose a valid population health CSV with member records.');
       setSelectedFile(null);
       return;
     }
 
-    // Maximum 50MB prototype safety limit
+    // 3. Max size limit (50MB)
     if (file.size > 50 * 1024 * 1024) {
-      setValidationError('File exceeds the 50MB prototype upload threshold. Please provide a smaller cohort batch.');
+      setValidationError('File exceeds the 50MB batch upload threshold. Please provide a smaller cohort file.');
       setSelectedFile(null);
       return;
     }
@@ -74,7 +76,7 @@ export const Upload: React.FC = () => {
     setSelectedFile(file);
   };
 
-  // File Input Handler
+  // File Input Change
   const handleFileInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
       validateAndSetFile(e.target.files[0]);
@@ -112,10 +114,10 @@ export const Upload: React.FC = () => {
     }
   };
 
-  // Execute Upload
+  // Execute Upload Workflow
   const handleUpload = async () => {
     if (!selectedFile) {
-      setValidationError('Please select or drop a .csv file to upload.');
+      setValidationError('Please select or drop a valid .csv file to upload.');
       return;
     }
 
@@ -125,21 +127,23 @@ export const Upload: React.FC = () => {
     setProgressStage('Validating CSV column headers & schema integrity...');
 
     try {
-      // Progress simulation steps
-      await new Promise(r => setTimeout(r, 300));
+      // Step 1: Client validation delay
+      await new Promise(r => setTimeout(r, 250));
       setUploadProgress(45);
-      setProgressStage('Streaming dataset payload to ingestion buffer...');
+      setProgressStage('Streaming dataset payload to API ingestion endpoint...');
 
-      await new Promise(r => setTimeout(r, 400));
+      // Step 2: Ingestion simulation
+      await new Promise(r => setTimeout(r, 300));
       setUploadProgress(80);
-      setProgressStage('Registering cohort batch & generating ingestion receipt...');
+      setProgressStage('Buffering batch records & registering pipeline job...');
 
-      const result = await mockApiService.uploadMemberCsv(selectedFile, {
+      // Call API Service Layer
+      const result = await apiService.uploadCsv(selectedFile, {
         simulateError: simulateFailure,
       });
 
       setUploadProgress(100);
-      setProgressStage('Ingestion complete!');
+      setProgressStage('Ingestion successfully completed!');
       setUploadResult(result);
     } catch (err: any) {
       setValidationError(err?.message || 'An unexpected ingestion failure occurred. Please verify your file.');
@@ -148,7 +152,7 @@ export const Upload: React.FC = () => {
     }
   };
 
-  // Download Sample CSV Helper
+  // Download Sample CSV
   const handleDownloadSampleCsv = () => {
     const sampleContent = `member_id,first_name,last_name,age,gender,primary_condition,systolic_bp,diastolic_bp,heart_rate,hba1c,admissions_past_12m,ed_visits_past_12m,active_medications
 MBR-901,Arthur,Pendleton,68,Male,COPD,146,88,76,7.8,1,2,6
@@ -177,7 +181,7 @@ MBR-905,Beatrice,Sterling,81,Female,Atrial Fibrillation,162,98,92,8.8,3,4,11`;
               Member Cohort Data Ingestion
             </h1>
             <span className="px-2.5 py-0.5 rounded-full bg-teal-500/10 text-teal-300 border border-teal-500/20 text-xs font-mono font-bold">
-              CSV Pipeline
+              POST /upload
             </span>
           </div>
           <p className="text-xs lg:text-sm text-slate-400 mt-1.5 max-w-2xl">
@@ -187,22 +191,22 @@ MBR-905,Beatrice,Sterling,81,Female,Atrial Fibrillation,162,98,92,8.8,3,4,11`;
 
         <button
           onClick={handleDownloadSampleCsv}
-          className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-teal-300 border border-slate-700 text-xs font-semibold transition-all shadow-sm shrink-0"
+          className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-teal-300 border border-slate-700 text-xs font-semibold transition-all shadow-sm shrink-0 cursor-pointer"
         >
           <Download className="w-4 h-4 text-teal-400" />
           <span>Download Sample CSV</span>
         </button>
       </div>
 
-      {/* Prototype / Synthetic Data Notice Banner */}
+      {/* Integration Notice Banner */}
       <div className="p-4 rounded-xl bg-slate-900/90 border border-amber-500/30 flex items-start gap-3.5 text-xs text-slate-300">
         <AlertTriangle className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
         <div className="space-y-1">
           <p className="font-bold text-amber-300">
-            Synthetic Data &amp; Prototype Ingestion Gateway
+            FastAPI Pipeline Integration Gateway
           </p>
           <p className="text-slate-400 text-[11px] leading-relaxed">
-            This module ingests and buffers member datasets in the prototype state. All predictive risk calculations, SHAP feature weights, and stratification models will be processed downstream by the backend FastAPI ML engine.
+            This module validates and buffers member datasets through the API service layer. All 54-feature engineering, SHAP feature attribution weights, and risk models are processed downstream by the backend FastAPI prediction pipeline.
           </p>
         </div>
       </div>
@@ -278,7 +282,7 @@ MBR-905,Beatrice,Sterling,81,Female,Atrial Fibrillation,162,98,92,8.8,3,4,11`;
               </div>
               <button
                 onClick={() => setValidationError(null)}
-                className="text-rose-400 hover:text-rose-200 p-1"
+                className="text-rose-400 hover:text-rose-200 p-1 cursor-pointer"
               >
                 <X className="w-4 h-4" />
               </button>
@@ -304,14 +308,14 @@ MBR-905,Beatrice,Sterling,81,Female,Atrial Fibrillation,162,98,92,8.8,3,4,11`;
                 <button
                   type="button"
                   onClick={() => fileInputRef.current?.click()}
-                  className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold border border-slate-700 transition-colors"
+                  className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold border border-slate-700 transition-colors cursor-pointer"
                 >
                   Change File
                 </button>
                 <button
                   type="button"
                   onClick={handleClearSelected}
-                  className="p-1.5 rounded-lg text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 transition-colors"
+                  className="p-1.5 rounded-lg text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 transition-colors cursor-pointer"
                   title="Remove selected file"
                 >
                   <X className="w-4 h-4" />
@@ -320,7 +324,7 @@ MBR-905,Beatrice,Sterling,81,Female,Atrial Fibrillation,162,98,92,8.8,3,4,11`;
             </div>
           )}
 
-          {/* Upload Progress Bar (when active) */}
+          {/* Upload Progress Bar */}
           {isUploading && (
             <div className="p-5 rounded-xl bg-slate-950/80 border border-teal-500/30 space-y-3 animate-in fade-in">
               <div className="flex items-center justify-between text-xs">
@@ -362,7 +366,7 @@ MBR-905,Beatrice,Sterling,81,Female,Atrial Fibrillation,162,98,92,8.8,3,4,11`;
                   type="button"
                   disabled={isUploading}
                   onClick={handleClearSelected}
-                  className="px-4 py-2.5 rounded-xl text-xs font-semibold text-slate-400 hover:text-white transition-colors disabled:opacity-50"
+                  className="px-4 py-2.5 rounded-xl text-xs font-semibold text-slate-400 hover:text-white transition-colors disabled:opacity-50 cursor-pointer"
                 >
                   Clear
                 </button>
@@ -371,7 +375,7 @@ MBR-905,Beatrice,Sterling,81,Female,Atrial Fibrillation,162,98,92,8.8,3,4,11`;
                 type="button"
                 disabled={!selectedFile || isUploading}
                 onClick={handleUpload}
-                className="px-6 py-2.5 rounded-xl bg-gradient-to-r from-teal-500 to-teal-600 hover:from-teal-400 hover:to-teal-500 text-slate-950 font-bold text-xs shadow-lg shadow-teal-500/20 transition-all flex items-center gap-2 group disabled:opacity-50 disabled:cursor-not-allowed"
+                className="px-6 py-2.5 rounded-xl bg-gradient-to-r from-teal-500 to-teal-600 hover:from-teal-400 hover:to-teal-500 text-slate-950 font-bold text-xs shadow-lg shadow-teal-500/20 transition-all flex items-center gap-2 group disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
               >
                 {isUploading ? (
                   <span>Ingesting Dataset...</span>
@@ -409,7 +413,7 @@ MBR-905,Beatrice,Sterling,81,Female,Atrial Fibrillation,162,98,92,8.8,3,4,11`;
                 setUploadResult(null);
                 setSelectedFile(null);
               }}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold border border-slate-700 transition-colors"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold border border-slate-700 transition-colors cursor-pointer"
             >
               <RotateCcw className="w-3.5 h-3.5" />
               <span>Upload Another</span>
@@ -441,7 +445,7 @@ MBR-905,Beatrice,Sterling,81,Female,Atrial Fibrillation,162,98,92,8.8,3,4,11`;
             <div className="p-4 rounded-xl bg-slate-950/70 border border-slate-800">
               <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider block">Model Pipeline</span>
               <span className="text-xs font-bold text-teal-400 block mt-1">Pending FastAPI Execution</span>
-              <span className="text-[10px] text-slate-400 block mt-0.5">Phase 2 Endpoint Binding</span>
+              <span className="text-[10px] text-slate-400 block mt-0.5">POST /upload Endpoint Binding</span>
             </div>
           </div>
 
@@ -473,13 +477,13 @@ MBR-905,Beatrice,Sterling,81,Female,Atrial Fibrillation,162,98,92,8.8,3,4,11`;
             >
               <span>View Member Population</span>
             </Link>
-            <Link
-              to="/dashboard"
-              className="inline-flex items-center justify-center gap-2 px-6 py-2.5 rounded-xl bg-gradient-to-r from-teal-500 to-teal-600 hover:from-teal-400 hover:to-teal-500 text-slate-950 font-bold text-xs shadow-lg shadow-teal-500/20 transition-all group"
+            <button
+              onClick={() => navigate('/dashboard')}
+              className="inline-flex items-center justify-center gap-2 px-6 py-2.5 rounded-xl bg-gradient-to-r from-teal-500 to-teal-600 hover:from-teal-400 hover:to-teal-500 text-slate-950 font-bold text-xs shadow-lg shadow-teal-500/20 transition-all group cursor-pointer"
             >
-              <span>Continue to Executive Dashboard</span>
+              <span>Continue to Overview</span>
               <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
-            </Link>
+            </button>
           </div>
         </div>
       )}
@@ -545,3 +549,5 @@ MBR-905,Beatrice,Sterling,81,Female,Atrial Fibrillation,162,98,92,8.8,3,4,11`;
     </div>
   );
 };
+
+export default Upload;

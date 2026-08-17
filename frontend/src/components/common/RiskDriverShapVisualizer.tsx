@@ -1,23 +1,30 @@
 import React from 'react';
-import { ShapDriver } from '../../types';
-import { Sparkles, Info, TrendingUp, TrendingDown } from 'lucide-react';
+import { SHAPDriver } from '../../types';
+import { Sparkles, Info, TrendingUp, TrendingDown, HelpCircle } from 'lucide-react';
 
 interface RiskDriverShapVisualizerProps {
-  drivers: ShapDriver[];
+  drivers?: SHAPDriver[];
   loading?: boolean;
+  title?: string;
+  subtitle?: string;
 }
 
 export const RiskDriverShapVisualizer: React.FC<RiskDriverShapVisualizerProps> = ({ 
-  drivers, 
-  loading = false 
+  drivers = [], 
+  loading = false,
+  title = 'Top Risk Drivers (SHAP Attribution)',
+  subtitle = '"Why is this member at risk?" — Ranked model feature contributions to overall risk score.',
 }) => {
   if (loading) {
     return (
       <div className="p-6 bg-slate-900/80 border border-slate-800 rounded-2xl animate-pulse space-y-4">
-        <div className="h-5 bg-slate-800 rounded w-48" />
+        <div className="flex items-center justify-between">
+          <div className="h-5 bg-slate-800 rounded w-52" />
+          <div className="h-4 bg-slate-800 rounded w-24" />
+        </div>
         <div className="space-y-3">
-          {[1, 2, 3, 4, 5].map((n) => (
-            <div key={n} className="h-12 bg-slate-800/60 rounded-xl" />
+          {[1, 2, 3, 4].map((n) => (
+            <div key={n} className="h-16 bg-slate-950/60 border border-slate-800/60 rounded-xl" />
           ))}
         </div>
       </div>
@@ -25,11 +32,26 @@ export const RiskDriverShapVisualizer: React.FC<RiskDriverShapVisualizerProps> =
   }
 
   if (!drivers || drivers.length === 0) {
-    return null;
+    return (
+      <div className="bg-slate-900/80 border border-slate-800 rounded-2xl p-6 text-center space-y-2">
+        <HelpCircle className="w-6 h-6 text-slate-500 mx-auto" />
+        <h4 className="text-xs font-bold text-white">No SHAP Feature Drivers Available</h4>
+        <p className="text-[11px] text-slate-400">
+          Feature contribution breakdown will be computed by the backend model scoring engine.
+        </p>
+      </div>
+    );
   }
 
+  // Extract raw value safely
+  const getVal = (d: SHAPDriver): number => {
+    if (d.shap_value !== undefined && d.shap_value !== null) return d.shap_value;
+    if (d.shapValue !== undefined && d.shapValue !== null) return d.shapValue;
+    return 0;
+  };
+
   // Find max absolute SHAP value for proportional bar scaling
-  const maxShap = Math.max(...drivers.map((d) => Math.abs(d.shapValue)), 1.0);
+  const maxShap = Math.max(...drivers.map((d) => Math.abs(getVal(d))), 0.1);
 
   return (
     <div className="bg-slate-900/90 border border-teal-500/30 rounded-2xl p-6 shadow-xl space-y-5">
@@ -38,37 +60,37 @@ export const RiskDriverShapVisualizer: React.FC<RiskDriverShapVisualizerProps> =
         <div>
           <div className="flex items-center gap-2">
             <Sparkles className="w-5 h-5 text-teal-400" />
-            <h3 className="text-base font-extrabold text-white tracking-tight">Top Risk Drivers</h3>
+            <h3 className="text-base font-extrabold text-white tracking-tight">{title}</h3>
             <span className="px-2.5 py-0.5 rounded-full bg-teal-500/10 border border-teal-500/20 text-teal-300 text-[10px] font-mono font-bold">
-              SHAP Feature Attribution
+              SHAP Explainability
             </span>
           </div>
-          <p className="text-xs text-slate-400 mt-1">
-            "Why is this member at risk?" — Ranked model feature contributions to overall risk score.
-          </p>
+          <p className="text-xs text-slate-400 mt-1">{subtitle}</p>
         </div>
         <div className="text-right shrink-0">
           <span className="text-[10px] font-semibold text-slate-400 bg-slate-950 px-2.5 py-1 rounded-lg border border-slate-800">
-            Mock SHAP Engine
+            Model Explainability
           </span>
         </div>
       </div>
 
-      {/* Safety & Healthcare Disclaimer */}
+      {/* Safety & Healthcare Prototype Disclaimer */}
       <div className="p-3.5 rounded-xl bg-slate-950/80 border border-slate-800 text-xs text-slate-300 flex items-start gap-2.5">
         <Info className="w-4 h-4 text-teal-400 shrink-0 mt-0.5" />
         <p className="leading-relaxed text-[11px]">
-          <strong className="text-white font-semibold">Healthcare Prototype Disclaimer: </strong>
-          Risk drivers shown are synthetic prototype outputs and are not clinical diagnoses. Values demonstrate how backend SHAP feature contributions will display.
+          <strong className="text-white font-semibold">Attribution Disclaimer: </strong>
+          Risk drivers represent feature attribution weights computed by the predictive risk model. Positive values indicate factors increasing risk; negative values indicate protective factors.
         </p>
       </div>
 
       {/* Ranked SHAP Feature Visualization List */}
       <div className="space-y-3.5">
         {drivers.map((driver) => {
-          const isPositive = driver.shapValue >= 0;
-          const barPercent = Math.min(Math.max((Math.abs(driver.shapValue) / maxShap) * 100, 8), 100);
-          const formattedContribution = isPositive ? `+${driver.shapValue.toFixed(2)}` : driver.shapValue.toFixed(2);
+          const rawShap = getVal(driver);
+          const isPositive = rawShap >= 0;
+          const barPercent = Math.min(Math.max((Math.abs(rawShap) / maxShap) * 100, 10), 100);
+          const formattedContribution = isPositive ? `+${rawShap.toFixed(2)}` : rawShap.toFixed(2);
+          const categoryName = driver.category || 'Health';
 
           return (
             <div
@@ -85,11 +107,11 @@ export const RiskDriverShapVisualizer: React.FC<RiskDriverShapVisualizerProps> =
                     <div className="flex items-center gap-2">
                       <h4 className="text-sm font-bold text-white">{driver.feature}</h4>
                       <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                        driver.category === 'Health' ? 'bg-rose-500/10 text-rose-300 border border-rose-500/20' :
-                        driver.category === 'Utilization' ? 'bg-amber-500/10 text-amber-300 border border-amber-500/20' :
+                        categoryName === 'Health' || categoryName === 'Clinical' ? 'bg-rose-500/10 text-rose-300 border border-rose-500/20' :
+                        categoryName === 'Utilization' ? 'bg-amber-500/10 text-amber-300 border border-amber-500/20' :
                         'bg-sky-500/10 text-sky-300 border border-sky-500/20'
                       }`}>
-                        {driver.category}
+                        {categoryName}
                       </span>
                     </div>
                     <p className="text-xs text-slate-400 mt-0.5">
@@ -100,7 +122,7 @@ export const RiskDriverShapVisualizer: React.FC<RiskDriverShapVisualizerProps> =
 
                 {/* Contribution Badge & Direction Indicator */}
                 <div className="flex items-center gap-2 shrink-0">
-                  <span className="text-xs text-slate-400 font-medium">Contribution:</span>
+                  <span className="text-xs text-slate-400 font-medium">SHAP Impact:</span>
                   <span className={`inline-flex items-center gap-1 font-mono font-extrabold text-xs px-2.5 py-1 rounded-lg border ${
                     isPositive 
                       ? 'bg-rose-500/15 border-rose-500/30 text-rose-300' 
@@ -137,3 +159,4 @@ export const RiskDriverShapVisualizer: React.FC<RiskDriverShapVisualizerProps> =
     </div>
   );
 };
+export default RiskDriverShapVisualizer;

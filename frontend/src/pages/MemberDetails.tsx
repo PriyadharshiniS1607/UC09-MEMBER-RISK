@@ -1,9 +1,7 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { 
   ArrowLeft, 
-  Activity, 
-  AlertTriangle, 
   Plus, 
   Phone, 
   Mail, 
@@ -13,21 +11,26 @@ import {
   Hospital,
   Car,
   Utensils,
-  Info
+  Info,
+  Activity
 } from 'lucide-react';
-import { mockApiService } from '../services/api';
-import { Member, Intervention, InterventionPriority, InterventionStatus } from '../types';
+import { apiService } from '../services/api';
+import { Member, Intervention, InterventionPriority, InterventionStatus, MemberExplanation } from '../types';
 import { RiskBadge } from '../components/common/RiskBadge';
 import { StatusBadge } from '../components/common/StatusBadge';
 import { Modal } from '../components/common/Modal';
 import { RiskComponentBar } from '../components/common/RiskComponentBar';
 import { RiskDriverShapVisualizer } from '../components/common/RiskDriverShapVisualizer';
+import { LoadingState } from '../components/common/LoadingState';
+import { ErrorState } from '../components/common/ErrorState';
 
 export const MemberDetails: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const [member, setMember] = useState<Member | null>(null);
+  const [explanation, setExplanation] = useState<MemberExplanation | null>(null);
   const [interventions, setInterventions] = useState<Intervention[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   // Modal State
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -39,27 +42,31 @@ export const MemberDetails: React.FC = () => {
   const [newAction, setNewAction] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
-  useEffect(() => {
-    const fetchMemberData = async () => {
-      if (!id) return;
-      setLoading(true);
-      try {
-        const [memberData, intvData] = await Promise.all([
-          mockApiService.getMemberById(id),
-          mockApiService.getInterventions({ memberId: id }),
-        ]);
+  const fetchMemberData = useCallback(async () => {
+    if (!id) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const [memberData, explanationData, intvData] = await Promise.all([
+        apiService.getMemberById(id),
+        apiService.getMemberExplanation(id),
+        apiService.getInterventions({ memberId: id }),
+      ]);
 
-        setMember(memberData || null);
-        setInterventions(intvData);
-      } catch (err) {
-        console.error('Error fetching member details:', err);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchMemberData();
+      setMember(memberData);
+      setExplanation(explanationData);
+      setInterventions(intvData);
+    } catch (err: any) {
+      console.error('Error fetching member details:', err);
+      setError('Unable to load member profile details. Please try again.');
+    } finally {
+      setLoading(false);
+    }
   }, [id]);
+
+  useEffect(() => {
+    fetchMemberData();
+  }, [fetchMemberData]);
 
   const handleCreateIntervention = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -67,7 +74,7 @@ export const MemberDetails: React.FC = () => {
 
     setSubmitting(true);
     try {
-      const created = await mockApiService.createIntervention({
+      const created = await apiService.createIntervention({
         memberId: member.id,
         memberName: `${member.firstName} ${member.lastName}`,
         memberCode: member.memberCode,
@@ -100,7 +107,7 @@ export const MemberDetails: React.FC = () => {
   const handleDispatchRecommended = async (rec: Member['recommendedInterventions'][0]) => {
     if (!member) return;
     try {
-      const created = await mockApiService.createIntervention({
+      const created = await apiService.createIntervention({
         memberId: member.id,
         memberName: `${member.firstName} ${member.lastName}`,
         memberCode: member.memberCode,
@@ -124,7 +131,7 @@ export const MemberDetails: React.FC = () => {
 
   const handleUpdateStatus = async (intvId: string, newStatus: InterventionStatus) => {
     try {
-      const updated = await mockApiService.updateInterventionStatus(intvId, newStatus);
+      const updated = await apiService.updateInterventionStatus(intvId, newStatus);
       if (updated) {
         setInterventions((prev) =>
           prev.map((item) => (item.id === intvId ? updated : item))
@@ -137,30 +144,47 @@ export const MemberDetails: React.FC = () => {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center min-h-[60vh]">
-        <div className="text-center space-y-3">
-          <Activity className="w-8 h-8 text-teal-400 animate-spin mx-auto" />
-          <p className="text-xs text-slate-400">Loading comprehensive member profile...</p>
-        </div>
+      <div className="space-y-6">
+        <LoadingState
+          message="Loading Comprehensive Member Profile..."
+          subMessage="Retrieving clinical vitals, utilization telemetry, SDOH factors, and SHAP drivers"
+        />
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="min-h-[50vh] flex items-center justify-center">
+        <ErrorState
+          title="Failed to Load Member"
+          message={error}
+          onRetry={fetchMemberData}
+          actionText="Retry Member Load"
+        />
       </div>
     );
   }
 
   if (!member) {
     return (
-      <div className="bg-slate-900/80 border border-slate-800 rounded-2xl p-12 text-center space-y-4">
-        <AlertTriangle className="w-12 h-12 text-amber-400 mx-auto" />
-        <h2 className="text-xl font-bold text-white">Member Not Found</h2>
+      <div className="bg-slate-900/80 border border-slate-800 rounded-2xl p-12 text-center space-y-4 max-w-lg mx-auto mt-12">
+        <div className="w-14 h-14 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-amber-400 flex items-center justify-center mx-auto">
+          <Info className="w-7 h-7" />
+        </div>
+        <h2 className="text-xl font-bold text-white">Member Record Not Found</h2>
         <p className="text-xs text-slate-400 max-w-sm mx-auto">
-          The requested member record could not be located in the population registry.
+          The requested member record (ID: <span className="font-mono text-teal-300">{id}</span>) could not be located in the population registry.
         </p>
-        <Link
-          to="/members"
-          className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-teal-500 text-slate-950 font-bold text-xs"
-        >
-          <ArrowLeft className="w-4 h-4" />
-          <span>Return to Members</span>
-        </Link>
+        <div className="pt-2">
+          <Link
+            to="/members"
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-teal-500 hover:bg-teal-400 text-slate-950 font-bold text-xs transition-colors"
+          >
+            <ArrowLeft className="w-4 h-4" />
+            <span>Return to Member Directory</span>
+          </Link>
+        </div>
       </div>
     );
   }
@@ -169,6 +193,9 @@ export const MemberDetails: React.FC = () => {
     member.riskSummary.riskLevel === 'Very High' ? 'Urgent' : 
     member.riskSummary.riskLevel === 'High' ? 'High' : 
     member.riskSummary.riskLevel === 'Medium' ? 'Medium' : 'Standard';
+
+  // Use SHAP drivers from explanation endpoint or member object
+  const shapDriversList = explanation?.risk_drivers || member.shapDrivers;
 
   return (
     <div className="space-y-6">
@@ -246,7 +273,7 @@ export const MemberDetails: React.FC = () => {
         </div>
       </div>
 
-      {/* Task 6A: SECTION A — OVERALL RISK */}
+      {/* SECTION A — OVERALL PREDICTIVE RISK */}
       <div className="bg-slate-900/80 border border-slate-800 rounded-2xl p-6 shadow-lg space-y-5">
         <div className="flex items-center justify-between pb-3 border-b border-slate-800">
           <div>
@@ -278,14 +305,14 @@ export const MemberDetails: React.FC = () => {
         </div>
       </div>
 
-      {/* Task 6B & 6C: SECTION B — HEALTH RISK & SECTION C — UTILIZATION RISK */}
+      {/* SECTION B — HEALTH RISK & SECTION C — UTILIZATION RISK */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Task 6B: Section B — Health Risk */}
+        {/* Section B — Health Risk */}
         <div className="bg-slate-900/80 border border-slate-800 rounded-2xl p-6 shadow-lg space-y-5">
           <div className="flex items-center justify-between pb-3 border-b border-slate-800">
             <div className="flex items-center gap-2">
               <Stethoscope className="w-5 h-5 text-rose-400" />
-              <h3 className="text-base font-bold text-white">Section B: Health Risk & Vitals</h3>
+              <h3 className="text-base font-bold text-white">Section B: Health Risk &amp; Vitals</h3>
             </div>
             <span className="text-xs font-mono text-rose-400 font-bold">Score: {member.riskBreakdown.healthRiskScore}/100</span>
           </div>
@@ -337,7 +364,7 @@ export const MemberDetails: React.FC = () => {
           </div>
         </div>
 
-        {/* Task 6C: Section C — Utilization Risk */}
+        {/* Section C — Utilization Risk */}
         <div className="bg-slate-900/80 border border-slate-800 rounded-2xl p-6 shadow-lg space-y-5">
           <div className="flex items-center justify-between pb-3 border-b border-slate-800">
             <div className="flex items-center gap-2">
@@ -391,10 +418,10 @@ export const MemberDetails: React.FC = () => {
         </div>
       </div>
 
-      {/* Task 7: RISK DRIVERS / SHAP VISUALIZATION ("Why is this member at risk?") */}
-      <RiskDriverShapVisualizer drivers={member.shapDrivers} />
+      {/* SHAP VISUALIZATION ("Why is this member at risk?") */}
+      <RiskDriverShapVisualizer drivers={shapDriversList} />
 
-      {/* Task 6D: SECTION D — SDOH RISK (MAJOR FEATURING) */}
+      {/* SECTION D — SDOH RISK */}
       <div className="bg-slate-900/80 border border-sky-500/30 rounded-2xl p-6 shadow-lg space-y-5">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b border-slate-800">
           <div>
@@ -473,7 +500,7 @@ export const MemberDetails: React.FC = () => {
         </div>
       </div>
 
-      {/* Task 8: INTERVENTION PREVIEW (Recommended Interventions) */}
+      {/* RECOMMENDED INTERVENTIONS */}
       <div className="bg-slate-900/80 border border-teal-500/30 rounded-2xl p-6 shadow-lg space-y-4">
         <div className="flex items-center justify-between pb-3 border-b border-slate-800">
           <div>
@@ -498,7 +525,7 @@ export const MemberDetails: React.FC = () => {
 
               <button
                 onClick={() => handleDispatchRecommended(rec)}
-                className="w-full mt-2 py-2 px-3 rounded-lg bg-teal-500/15 hover:bg-teal-500/25 text-teal-300 border border-teal-500/30 text-xs font-bold transition-colors flex items-center justify-center gap-1.5"
+                className="w-full mt-2 py-2 px-3 rounded-lg bg-teal-500/15 hover:bg-teal-500/25 text-teal-300 border border-teal-500/30 text-xs font-bold transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
               >
                 <Plus className="w-3.5 h-3.5" />
                 <span>Dispatch Intervention</span>
@@ -508,7 +535,7 @@ export const MemberDetails: React.FC = () => {
         </div>
       </div>
 
-      {/* Linked Interventions Roster */}
+      {/* Linked Active Interventions Roster */}
       <div className="bg-slate-900/80 border border-slate-800 rounded-2xl p-6 shadow-lg space-y-4">
         <div className="flex items-center justify-between pb-3 border-b border-slate-800">
           <div>
@@ -517,7 +544,7 @@ export const MemberDetails: React.FC = () => {
           </div>
           <button
             onClick={() => setIsModalOpen(true)}
-            className="text-xs text-teal-400 hover:text-teal-300 font-semibold flex items-center gap-1"
+            className="text-xs text-teal-400 hover:text-teal-300 font-semibold flex items-center gap-1 cursor-pointer"
           >
             <Plus className="w-3.5 h-3.5" />
             <span>Add Task</span>
@@ -561,7 +588,7 @@ export const MemberDetails: React.FC = () => {
                     {intv.status !== 'Completed' && (
                       <button
                         onClick={() => handleUpdateStatus(intv.id, 'Completed')}
-                        className="px-2.5 py-1 rounded bg-emerald-500/15 text-emerald-300 hover:bg-emerald-500/25 border border-emerald-500/30 text-[11px] font-semibold flex items-center gap-1 transition-colors"
+                        className="px-2.5 py-1 rounded bg-emerald-500/15 text-emerald-300 hover:bg-emerald-500/25 border border-emerald-500/30 text-[11px] font-semibold flex items-center gap-1 transition-colors cursor-pointer"
                       >
                         <CheckCircle className="w-3 h-3" /> Mark Completed
                       </button>
@@ -676,14 +703,14 @@ export const MemberDetails: React.FC = () => {
             <button
               type="button"
               onClick={() => setIsModalOpen(false)}
-              className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-400 hover:text-white transition-colors"
+              className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-400 hover:text-white transition-colors cursor-pointer"
             >
               Cancel
             </button>
             <button
               type="submit"
               disabled={submitting}
-              className="px-4 py-2 rounded-xl bg-teal-500 hover:bg-teal-400 text-slate-950 text-xs font-bold transition-all shadow-lg shadow-teal-500/20 disabled:opacity-50"
+              className="px-4 py-2 rounded-xl bg-teal-500 hover:bg-teal-400 text-slate-950 text-xs font-bold transition-all shadow-lg shadow-teal-500/20 disabled:opacity-50 cursor-pointer"
             >
               {submitting ? 'Dispatching...' : 'Dispatch Intervention'}
             </button>
@@ -693,3 +720,5 @@ export const MemberDetails: React.FC = () => {
     </div>
   );
 };
+
+export default MemberDetails;

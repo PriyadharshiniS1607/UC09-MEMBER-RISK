@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Activity, ShieldCheck, ArrowRight, Lock, Mail, Sparkles, Stethoscope, HeartHandshake, UserCheck } from 'lucide-react';
-import { mockApiService } from '../services/api';
+import { apiService } from '../services/api';
 import { MOCK_USERS } from '../mock/mockData';
 import { User } from '../types';
 
@@ -25,7 +25,7 @@ export const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
     e.preventDefault();
     setLoading(true);
     try {
-      const response = await mockApiService.login(email);
+      const response = await apiService.login(email);
       onLoginSuccess(response.user);
       navigate('/dashboard');
     } catch (err) {

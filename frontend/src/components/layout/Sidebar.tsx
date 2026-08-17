@@ -10,7 +10,7 @@ import {
   HeartHandshake,
   UploadCloud
 } from 'lucide-react';
-import { mockApiService } from '../../services/api';
+import { apiService } from '../../services/api';
 import { User } from '../../types';
 
 interface SidebarProps {
@@ -22,7 +22,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentUser, onLogout }) => {
   const navigate = useNavigate();
 
   const handleLogoutClick = () => {
-    mockApiService.logout();
+    apiService.logout();
     onLogout();
     navigate('/login');
   };

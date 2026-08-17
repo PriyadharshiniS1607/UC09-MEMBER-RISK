@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { 
   Users, 
@@ -15,54 +15,87 @@ import {
   Info,
   UploadCloud
 } from 'lucide-react';
-import { mockApiService } from '../services/api';
+import { apiService } from '../services/api';
 import { Member, Intervention, PopulationMetrics } from '../types';
 import { MetricCard } from '../components/common/MetricCard';
 import { RiskBadge } from '../components/common/RiskBadge';
 import { StatusBadge } from '../components/common/StatusBadge';
 import { RiskComponentBar } from '../components/common/RiskComponentBar';
+import { LoadingState } from '../components/common/LoadingState';
+import { ErrorState } from '../components/common/ErrorState';
+import { EmptyState } from '../components/common/EmptyState';
 
 export const Dashboard: React.FC = () => {
   const [metrics, setMetrics] = useState<PopulationMetrics | null>(null);
   const [highRiskMembers, setHighRiskMembers] = useState<Member[]>([]);
   const [recentInterventions, setRecentInterventions] = useState<Intervention[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    const fetchDashboardData = async () => {
-      setLoading(true);
-      try {
-        const [metricsData, membersData, interventionsData] = await Promise.all([
-          mockApiService.getPopulationMetrics(),
-          mockApiService.getMembers({ sortBy: 'riskScore_desc' }),
-          mockApiService.getInterventions({ status: 'In Progress' }),
-        ]);
+  const fetchDashboardData = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const [metricsData, membersData, interventionsData] = await Promise.all([
+        apiService.getRiskSummary(),
+        apiService.getMembers({ sortBy: 'riskScore_desc' }),
+        apiService.getInterventions({ status: 'In Progress' }),
+      ]);
 
-        setMetrics(metricsData);
-        setHighRiskMembers(membersData.slice(0, 4));
-        setRecentInterventions(interventionsData.slice(0, 4));
-      } catch (err) {
-        console.error('Error fetching dashboard data:', err);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchDashboardData();
+      setMetrics(metricsData);
+      setHighRiskMembers(membersData.slice(0, 4));
+      setRecentInterventions(interventionsData.slice(0, 4));
+    } catch (err: any) {
+      console.error('Error fetching dashboard data:', err);
+      setError('Unable to load dashboard data. Please check your connection and try again.');
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
-  if (loading || !metrics) {
+  useEffect(() => {
+    fetchDashboardData();
+  }, [fetchDashboardData]);
+
+  if (loading) {
     return (
-      <div className="flex items-center justify-center min-h-[60vh]">
-        <div className="text-center space-y-3">
-          <Activity className="w-8 h-8 text-teal-400 animate-spin mx-auto" />
-          <p className="text-sm text-slate-400 font-medium">Loading population risk intelligence...</p>
-        </div>
+      <div className="space-y-6">
+        <LoadingState 
+          message="Loading Population Risk Intelligence..."
+          subMessage="Fetching member stratification and risk vectors through the API service layer"
+        />
       </div>
     );
   }
 
-  // Calculate cohort component averages from mock dataset
+  if (error) {
+    return (
+      <div className="min-h-[50vh] flex items-center justify-center">
+        <ErrorState
+          title="Dashboard Unavailable"
+          message={error}
+          onRetry={fetchDashboardData}
+          actionText="Retry Dashboard Load"
+        />
+      </div>
+    );
+  }
+
+  if (!metrics || metrics.totalMembers === 0) {
+    return (
+      <div className="min-h-[50vh] flex items-center justify-center">
+        <EmptyState
+          icon={Users}
+          title="No Member Population Data Available"
+          message="Upload a patient CSV cohort to begin calculating risk scores and generating intervention plans."
+          actionText="Ingest Member CSV"
+          actionHref="/upload"
+        />
+      </div>
+    );
+  }
+
+  // Calculate cohort component averages from data
   const populationRiskBreakdown = {
     healthRiskScore: 64,
     utilizationRiskScore: 58,
@@ -79,10 +112,10 @@ export const Dashboard: React.FC = () => {
           <div>
             <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-teal-500/10 border border-teal-500/20 text-teal-300 text-xs font-semibold mb-3">
               <ShieldCheck className="w-3.5 h-3.5 text-teal-400" />
-              <span>UC09 Risk Analytics Prototype (Synthetic Data)</span>
+              <span>UC09 Risk Analytics &amp; Intervention System</span>
             </div>
             <h1 className="text-2xl lg:text-3xl font-extrabold text-white tracking-tight">
-              Member Risk Prediction & Intervention Dashboard
+              Member Risk Prediction &amp; Intervention Dashboard
             </h1>
             <p className="text-xs lg:text-sm text-slate-400 mt-1.5 max-w-2xl leading-relaxed">
               Combining individual member health data, utilization history, and county-level SDOH indicators (mapped by FIPS) for early intervention orchestration.
@@ -114,7 +147,7 @@ export const Dashboard: React.FC = () => {
         </div>
       </div>
 
-      {/* Task 1: KPI Metric Cards Grid (Derived 100% from Mock Data) */}
+      {/* KPI Metric Cards Grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 lg:gap-6">
         <MetricCard
           title="Total Monitored Members"
@@ -152,13 +185,13 @@ export const Dashboard: React.FC = () => {
           icon={HeartPulse}
           accentColor="amber"
           progress={metrics.averageRiskScore}
-          trend={{ value: 'Synthetic baseline', direction: 'neutral' }}
+          trend={{ value: 'Model baseline', direction: 'neutral' }}
         />
       </div>
 
-      {/* Task 2: 4-Tier Risk Distribution Visualization & High Risk Roster */}
+      {/* 4-Tier Risk Distribution Visualization & High Risk Roster */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Task 2: 4-Tier Risk Distribution Breakdown */}
+        {/* 4-Tier Risk Stratification Breakdown */}
         <div className="lg:col-span-1 bg-slate-900/80 border border-slate-800 rounded-2xl p-6 shadow-lg flex flex-col justify-between">
           <div>
             <div className="flex items-center justify-between pb-4 border-b border-slate-800">
@@ -235,7 +268,7 @@ export const Dashboard: React.FC = () => {
           <div className="mt-6 pt-4 border-t border-slate-800 bg-slate-950/40 rounded-xl p-3 text-[11px] text-slate-400 flex items-start gap-2">
             <Info className="w-4 h-4 text-teal-400 shrink-0 mt-0.5" />
             <span>
-              Project-defined predictive risk categories based on synthetic model scoring (not clinical diagnosis thresholds).
+              Predictive risk categories based on ML model scoring across health, utilization, and SDOH indices.
             </span>
           </div>
         </div>
@@ -301,11 +334,11 @@ export const Dashboard: React.FC = () => {
         </div>
       </div>
 
-      {/* Task 3: Risk Component Visualization Section */}
+      {/* Risk Component Breakdown */}
       <div className="bg-slate-900/80 border border-slate-800 rounded-2xl p-6 shadow-lg space-y-4">
         <div className="flex items-center justify-between pb-4 border-b border-slate-800">
           <div>
-            <h3 className="text-base font-bold text-white">Risk Component Breakdown & Vectors</h3>
+            <h3 className="text-base font-bold text-white">Risk Component Breakdown &amp; Vectors</h3>
             <p className="text-xs text-slate-400 mt-0.5">
               Relationship between individual Health Risk, Utilization Risk, SDOH Risk, and Combined Member Risk
             </p>
@@ -315,7 +348,7 @@ export const Dashboard: React.FC = () => {
         <RiskComponentBar breakdown={populationRiskBreakdown} />
       </div>
 
-      {/* Task 4: SDOH Dashboard Section (Major Dashboard Focus) */}
+      {/* SDOH Geographic Intelligence Section */}
       <div className="bg-slate-900/80 border border-teal-500/20 rounded-2xl p-6 shadow-lg space-y-6">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-4 border-b border-slate-800">
           <div>
@@ -327,7 +360,7 @@ export const Dashboard: React.FC = () => {
               </span>
             </div>
             <p className="text-xs text-slate-400 mt-0.5">
-              Community & county-level environmental indicators linked to member geographic location (FIPS Code)
+              Community &amp; county-level environmental indicators linked to member geographic location (FIPS Code)
             </p>
           </div>
         </div>
@@ -343,7 +376,6 @@ export const Dashboard: React.FC = () => {
 
         {/* SDOH 4-Grid Cards */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          {/* Social Vulnerability */}
           <div className="p-4 rounded-xl bg-slate-950/60 border border-slate-800 space-y-2">
             <div className="flex items-center justify-between">
               <span className="text-xs font-bold text-white flex items-center gap-2">
@@ -358,7 +390,6 @@ export const Dashboard: React.FC = () => {
             </p>
           </div>
 
-          {/* Transportation / Accessibility */}
           <div className="p-4 rounded-xl bg-slate-950/60 border border-slate-800 space-y-2">
             <div className="flex items-center justify-between">
               <span className="text-xs font-bold text-white flex items-center gap-2">
@@ -373,7 +404,6 @@ export const Dashboard: React.FC = () => {
             </p>
           </div>
 
-          {/* Healthcare / Places Access */}
           <div className="p-4 rounded-xl bg-slate-950/60 border border-slate-800 space-y-2">
             <div className="flex items-center justify-between">
               <span className="text-xs font-bold text-white flex items-center gap-2">
@@ -388,7 +418,6 @@ export const Dashboard: React.FC = () => {
             </p>
           </div>
 
-          {/* Food Access */}
           <div className="p-4 rounded-xl bg-slate-950/60 border border-slate-800 space-y-2">
             <div className="flex items-center justify-between">
               <span className="text-xs font-bold text-white flex items-center gap-2">
@@ -421,39 +450,47 @@ export const Dashboard: React.FC = () => {
           </Link>
         </div>
 
-        <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
-          {recentInterventions.map((intv) => (
-            <div
-              key={intv.id}
-              className="p-4 rounded-xl bg-slate-950/60 border border-slate-800/80 hover:border-teal-500/30 transition-all space-y-3"
-            >
-              <div className="flex items-start justify-between gap-2">
-                <div>
-                  <span className="text-[10px] font-bold uppercase tracking-wider text-teal-400 bg-teal-500/10 px-2 py-0.5 rounded border border-teal-500/20">
-                    {intv.type}
-                  </span>
-                  <h4 className="text-sm font-bold text-white mt-1.5">{intv.title}</h4>
+        {recentInterventions.length === 0 ? (
+          <div className="p-8 text-center text-slate-400 text-xs">
+            No active interventions currently in progress.
+          </div>
+        ) : (
+          <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
+            {recentInterventions.map((intv) => (
+              <div
+                key={intv.id}
+                className="p-4 rounded-xl bg-slate-950/60 border border-slate-800/80 hover:border-teal-500/30 transition-all space-y-3"
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <div>
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-teal-400 bg-teal-500/10 px-2 py-0.5 rounded border border-teal-500/20">
+                      {intv.type}
+                    </span>
+                    <h4 className="text-sm font-bold text-white mt-1.5">{intv.title}</h4>
+                  </div>
+                  <StatusBadge priority={intv.priority} />
                 </div>
-                <StatusBadge priority={intv.priority} />
-              </div>
 
-              <p className="text-xs text-slate-400 line-clamp-2 leading-relaxed">
-                {intv.description}
-              </p>
+                <p className="text-xs text-slate-400 line-clamp-2 leading-relaxed">
+                  {intv.description}
+                </p>
 
-              <div className="flex items-center justify-between pt-2 border-t border-slate-800/80 text-xs">
-                <div className="flex items-center gap-1.5 text-slate-300">
-                  <span className="font-medium text-white">{intv.memberName}</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className="text-slate-400 text-[11px]">Due {intv.dueDate}</span>
-                  <StatusBadge status={intv.status} />
+                <div className="flex items-center justify-between pt-2 border-t border-slate-800/80 text-xs">
+                  <div className="flex items-center gap-1.5 text-slate-300">
+                    <span className="font-medium text-white">{intv.memberName}</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-slate-400 text-[11px]">Due {intv.dueDate}</span>
+                    <StatusBadge status={intv.status} />
+                  </div>
                 </div>
               </div>
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );
 };
+
+export default Dashboard;

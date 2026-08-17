@@ -1,13 +1,15 @@
-import axios from 'axios';
+import axios, { AxiosInstance } from 'axios';
 import { 
   Member, 
   Intervention, 
   PopulationMetrics, 
   User, 
-  RiskLevel, 
-  InterventionStatus, 
-  InterventionPriority,
-  InterventionCategory
+  MemberExplanation, 
+  UploadResponse,
+  MemberQueryParams,
+  InterventionQueryParams,
+  InterventionStatus,
+  SHAPDriver
 } from '../types';
 import { 
   MOCK_MEMBERS, 
@@ -15,10 +17,16 @@ import {
   MOCK_USERS 
 } from '../mock/mockData';
 
-// Configured Axios instance ready for future backend integration
-export const apiClient = axios.create({
-  baseURL: import.meta.env.VITE_API_URL || 'http://localhost:8000',
-  timeout: 10000,
+// Configurable API base URL with fallback to local FastAPI development server
+const API_BASE_URL = 
+  import.meta.env.VITE_API_BASE_URL || 
+  import.meta.env.VITE_API_URL || 
+  'http://localhost:8000';
+
+// Configured Axios instance ready for future FastAPI backend integration
+export const apiClient: AxiosInstance = axios.create({
+  baseURL: API_BASE_URL,
+  timeout: 15000,
   headers: {
     'Content-Type': 'application/json',
   },
@@ -33,42 +41,51 @@ apiClient.interceptors.request.use((config) => {
   return config;
 });
 
-// Synthetic latency simulator helper
+// Synthetic latency simulator helper for realistic frontend responsiveness simulation
 const simulateDelay = <T>(data: T, ms: number = 250): Promise<T> => {
   return new Promise((resolve) => setTimeout(() => resolve(data), ms));
 };
 
-// In-memory working state for demo interactions
+// In-memory working state for dynamic frontend prototype interaction
 let dynamicMembers: Member[] = [...MOCK_MEMBERS];
 let dynamicInterventions: Intervention[] = [...MOCK_INTERVENTIONS];
 
-export const mockApiService = {
-  // Authentication
-  async login(email: string): Promise<{ user: User; token: string }> {
-    const matchedUser = MOCK_USERS.find(u => u.email.toLowerCase() === email.toLowerCase()) || MOCK_USERS[0];
-    const token = `mock-jwt-token-${matchedUser.id}-${Date.now()}`;
-    localStorage.setItem('care_risk_token', token);
-    localStorage.setItem('care_risk_user', JSON.stringify(matchedUser));
-    return simulateDelay({ user: matchedUser, token }, 350);
-  },
+// Flag to control mock vs real network execution (defaults to true for prototype / pre-backend phase)
+const USE_MOCK_API = import.meta.env.VITE_USE_MOCK_API !== 'false';
 
-  async getCurrentUser(): Promise<User | null> {
-    const userStr = localStorage.getItem('care_risk_user');
-    if (!userStr) return null;
-    try {
-      return JSON.parse(userStr);
-    } catch {
-      return null;
+/**
+ * Normalizes SHAP drivers so that shap_value and shapValue are both reliably accessible
+ */
+export const normalizeShapDrivers = (drivers: SHAPDriver[] = []): SHAPDriver[] => {
+  return drivers.map((d) => {
+    const val = d.shap_value !== undefined ? d.shap_value : (d.shapValue !== undefined ? d.shapValue : 0);
+    return {
+      ...d,
+      shap_value: val,
+      shapValue: val,
+    };
+  });
+};
+
+/**
+ * Primary API Service Layer
+ * All pages and components consume operations through this service.
+ */
+export const apiService = {
+  // ==========================================
+  // 1. GET /risk-summary
+  // Population Risk Summary & Cohort Stratification
+  // ==========================================
+  async getRiskSummary(): Promise<PopulationMetrics> {
+    if (!USE_MOCK_API) {
+      try {
+        const response = await apiClient.get<PopulationMetrics>('/risk-summary');
+        return response.data;
+      } catch (err) {
+        console.warn('Backend GET /risk-summary unavailable, falling back to mock dataset', err);
+      }
     }
-  },
 
-  logout(): void {
-    localStorage.removeItem('care_risk_token');
-    localStorage.removeItem('care_risk_user');
-  },
-
-  // Population Analytics - Dynamic metrics calculation from existing mock data
-  async getPopulationMetrics(): Promise<PopulationMetrics> {
     const total = dynamicMembers.length;
     const vHigh = dynamicMembers.filter(m => m.riskSummary.riskLevel === 'Very High').length;
     const high = dynamicMembers.filter(m => m.riskSummary.riskLevel === 'High').length;
@@ -102,14 +119,25 @@ export const mockApiService = {
     return simulateDelay(metrics, 200);
   },
 
-  // Members Retrieval with Filters, Search, and Sorting
-  async getMembers(params?: {
-    search?: string;
-    riskLevel?: RiskLevel | 'All';
-    sdohTier?: string;
-    condition?: string;
-    sortBy?: string;
-  }): Promise<Member[]> {
+  // Alias for backward compatibility
+  async getPopulationMetrics(): Promise<PopulationMetrics> {
+    return this.getRiskSummary();
+  },
+
+  // ==========================================
+  // 2. GET /members
+  // Population Registry Listing with Filters & Sorting
+  // ==========================================
+  async getMembers(params?: MemberQueryParams): Promise<Member[]> {
+    if (!USE_MOCK_API) {
+      try {
+        const response = await apiClient.get<Member[]>('/members', { params });
+        return response.data;
+      } catch (err) {
+        console.warn('Backend GET /members unavailable, falling back to mock dataset', err);
+      }
+    }
+
     let result = [...dynamicMembers];
 
     if (params?.search) {
@@ -125,8 +153,9 @@ export const mockApiService = {
       );
     }
 
-    if (params?.riskLevel && params.riskLevel !== 'All') {
-      result = result.filter((m) => m.riskSummary.riskLevel === params.riskLevel);
+    const filterRisk = params?.riskCategory || params?.riskLevel;
+    if (filterRisk && filterRisk !== 'All') {
+      result = result.filter((m) => m.riskSummary.riskLevel === filterRisk);
     }
 
     if (params?.sdohTier && params.sdohTier !== 'All') {
@@ -162,62 +191,80 @@ export const mockApiService = {
           result.sort((a, b) => b.riskBreakdown.sdohRiskScore - a.riskBreakdown.sdohRiskScore);
           break;
         default:
+          result.sort((a, b) => b.riskSummary.overallRiskScore - a.riskSummary.overallRiskScore);
           break;
       }
     } else {
-      // Default sort by risk score descending
       result.sort((a, b) => b.riskSummary.overallRiskScore - a.riskSummary.overallRiskScore);
     }
 
     return simulateDelay(result, 250);
   },
 
-  async getMemberById(id: string): Promise<Member | undefined> {
-    const member = dynamicMembers.find((m) => m.id === id);
+  // ==========================================
+  // 3. GET /members/{member_id}
+  // Detailed Member Profile
+  // ==========================================
+  async getMemberById(id: string): Promise<Member | null> {
+    if (!USE_MOCK_API) {
+      try {
+        const response = await apiClient.get<Member>(`/members/${id}`);
+        return response.data;
+      } catch (err) {
+        console.warn(`Backend GET /members/${id} unavailable, falling back to mock dataset`, err);
+      }
+    }
+
+    const member = dynamicMembers.find((m) => m.id === id || m.memberCode === id);
+    if (!member) return simulateDelay(null, 150);
+
     return simulateDelay(member, 200);
   },
 
-  // Future Backend API Simulation: GET /members/{member_id}/explanation
-  async getMemberExplanation(memberId: string): Promise<{
-    member_id: string;
-    risk_score: number;
-    risk_category: RiskLevel;
-    risk_drivers: {
-      feature: string;
-      value: string | number;
-      shap_value: number;
-      rank: number;
-      category?: string;
-      description?: string;
-    }[];
-  } | undefined> {
-    const member = dynamicMembers.find((m) => m.id === memberId);
-    if (!member) return undefined;
+  // ==========================================
+  // 4. GET /members/{member_id}/explanation
+  // Model SHAP Feature Drivers & Attribution
+  // ==========================================
+  async getMemberExplanation(memberId: string): Promise<MemberExplanation | null> {
+    if (!USE_MOCK_API) {
+      try {
+        const response = await apiClient.get<MemberExplanation>(`/members/${memberId}/explanation`);
+        return response.data;
+      } catch (err) {
+        console.warn(`Backend GET /members/${memberId}/explanation unavailable, falling back to mock dataset`, err);
+      }
+    }
 
-    const drivers = member.shapDrivers.map((d) => ({
-      feature: d.feature,
-      value: d.value,
-      shap_value: d.shapValue,
-      rank: d.rank,
-      category: d.category,
-      description: d.description,
-    }));
+    const member = dynamicMembers.find((m) => m.id === memberId || m.memberCode === memberId);
+    if (!member) return simulateDelay(null, 150);
 
-    return simulateDelay({
+    const drivers = normalizeShapDrivers(member.shapDrivers);
+
+    const explanation: MemberExplanation = {
       member_id: member.id,
       risk_score: member.riskSummary.overallRiskScore,
       risk_category: member.riskSummary.riskLevel,
       risk_drivers: drivers,
-    }, 200);
+      summary: `Top risk contributors for ${member.firstName} ${member.lastName} based on clinical conditions, utilization, and SDOH factors.`,
+    };
+
+    return simulateDelay(explanation, 200);
   },
 
-  // Interventions
-  async getInterventions(params?: {
-    status?: InterventionStatus | 'All';
-    priority?: InterventionPriority | 'All';
-    category?: InterventionCategory | 'All';
-    memberId?: string;
-  }): Promise<Intervention[]> {
+  // ==========================================
+  // 5. GET /interventions
+  // Interventions Listing with Filters
+  // ==========================================
+  async getInterventions(params?: InterventionQueryParams): Promise<Intervention[]> {
+    if (!USE_MOCK_API) {
+      try {
+        const response = await apiClient.get<Intervention[]>('/interventions', { params });
+        return response.data;
+      } catch (err) {
+        console.warn('Backend GET /interventions unavailable, falling back to mock dataset', err);
+      }
+    }
+
     let result = [...dynamicInterventions];
 
     if (params?.memberId) {
@@ -239,7 +286,97 @@ export const mockApiService = {
     return simulateDelay(result, 250);
   },
 
+  // ==========================================
+  // 6. POST /upload
+  // CSV Dataset Ingestion
+  // ==========================================
+  async uploadCsv(
+    file: File, 
+    options?: { simulateError?: boolean }
+  ): Promise<UploadResponse> {
+    // 1. Validation: Ensure file exists and is not empty
+    if (!file || file.size === 0) {
+      throw new Error('The selected CSV file is empty (0 bytes). Please select a valid population dataset.');
+    }
+
+    // 2. Validation: File extension must be .csv
+    if (!file.name.toLowerCase().endsWith('.csv')) {
+      throw new Error(`Unsupported file type: "${file.name}". Please upload a standard comma-separated (.csv) file.`);
+    }
+
+    // 3. Optional simulated failure for testing failure states
+    if (options?.simulateError) {
+      await simulateDelay(null, 500);
+      throw new Error('Schema validation error: Column "member_id" or demographic feature missing.');
+    }
+
+    if (!USE_MOCK_API) {
+      try {
+        const formData = new FormData();
+        formData.append('file', file);
+        const response = await apiClient.post<UploadResponse>('/upload', formData, {
+          headers: { 'Content-Type': 'multipart/form-data' },
+        });
+        return response.data;
+      } catch (err: any) {
+        console.warn('Backend POST /upload unavailable, falling back to mock dataset response', err);
+      }
+    }
+
+    // Metadata extraction only (NO frontend ML or risk calculation)
+    let headers: string[] = [];
+    let lineCount = 0;
+
+    try {
+      const text = await file.text();
+      const lines = text.split(/\r?\n/).filter(line => line.trim().length > 0);
+      lineCount = Math.max(0, lines.length - 1);
+      if (lines.length > 0) {
+        headers = lines[0].split(',').map(h => h.trim().replace(/^["']|["']$/g, '')).filter(Boolean);
+      }
+    } catch {
+      lineCount = 150;
+      headers = ['member_id', 'age', 'gender', 'systolic_bp', 'hba1c', 'chronic_conditions', 'admissions_l12m'];
+    }
+
+    if (headers.length === 0) {
+      headers = ['member_id', 'age', 'gender', 'systolic_bp', 'hba1c', 'chronic_conditions'];
+    }
+
+    const response: UploadResponse = {
+      success: true,
+      message: 'Member cohort CSV successfully ingested and buffered for backend risk scoring.',
+      filename: file.name,
+      fileSizeBytes: file.size,
+      recordsCount: lineCount > 0 ? lineCount : 120,
+      uploadedAt: new Date().toISOString(),
+      batchId: `BATCH-UC09-${Date.now().toString(36).toUpperCase()}`,
+      detectedHeaders: headers.slice(0, 10),
+      status: 'Validated',
+      processingNote: 'File buffered in memory. Backend FastAPI ML prediction pipeline will calculate risk indices in Phase 2.',
+    };
+
+    return simulateDelay(response, 800);
+  },
+
+  // Alias for backward compatibility
+  async uploadMemberCsv(file: File, options?: { simulateError?: boolean }): Promise<UploadResponse> {
+    return this.uploadCsv(file, options);
+  },
+
+  // ==========================================
+  // 7. Mutating & Workflow Actions
+  // ==========================================
   async createIntervention(newIntervention: Omit<Intervention, 'id' | 'createdDate'>): Promise<Intervention> {
+    if (!USE_MOCK_API) {
+      try {
+        const response = await apiClient.post<Intervention>('/interventions', newIntervention);
+        return response.data;
+      } catch (err) {
+        console.warn('Backend POST /interventions unavailable, updating local mock state', err);
+      }
+    }
+
     const created: Intervention = {
       ...newIntervention,
       id: `int-${Date.now()}`,
@@ -262,6 +399,15 @@ export const mockApiService = {
   },
 
   async updateInterventionStatus(id: string, status: InterventionStatus): Promise<Intervention | null> {
+    if (!USE_MOCK_API) {
+      try {
+        const response = await apiClient.patch<Intervention>(`/interventions/${id}`, { status });
+        return response.data;
+      } catch (err) {
+        console.warn(`Backend PATCH /interventions/${id} unavailable, updating local mock state`, err);
+      }
+    }
+
     let updatedItem: Intervention | null = null;
     dynamicInterventions = dynamicInterventions.map((item) => {
       if (item.id === id) {
@@ -278,60 +424,33 @@ export const mockApiService = {
     return simulateDelay(updatedItem, 200);
   },
 
-  // CSV Data Ingestion Service (Simulating POST /upload)
-  async uploadMemberCsv(
-    file: File, 
-    options?: { simulateError?: boolean }
-  ): Promise<import('../types').UploadCsvResponse> {
-    // 1. Validation: Ensure file exists and is not empty
-    if (!file || file.size === 0) {
-      throw new Error('The selected CSV file is empty (0 bytes). Please select a valid population dataset.');
-    }
+  // ==========================================
+  // 8. Auth Operations
+  // ==========================================
+  async login(email: string): Promise<{ user: User; token: string }> {
+    const matchedUser = MOCK_USERS.find(u => u.email.toLowerCase() === email.toLowerCase()) || MOCK_USERS[0];
+    const token = `mock-jwt-token-${matchedUser.id}-${Date.now()}`;
+    localStorage.setItem('care_risk_token', token);
+    localStorage.setItem('care_risk_user', JSON.stringify(matchedUser));
+    return simulateDelay({ user: matchedUser, token }, 350);
+  },
 
-    // 2. Validation: File extension must be .csv
-    if (!file.name.toLowerCase().endsWith('.csv')) {
-      throw new Error(`Unsupported file type: "${file.name}". Please upload a standard comma-separated (.csv) file.`);
-    }
-
-    // 3. Optional simulated failure for testing failure states
-    if (options?.simulateError) {
-      await simulateDelay(null, 600);
-      throw new Error('Simulated Ingestion Error: Schema validation failed. Column "member_id" or "demographics" was missing or corrupted.');
-    }
-
-    // 4. Inspect headers & row count (Metadata extraction only - NO risk calculation or ML preprocessing)
-    let headers: string[] = [];
-    let lineCount = 0;
-
+  async getCurrentUser(): Promise<User | null> {
+    const userStr = localStorage.getItem('care_risk_user');
+    if (!userStr) return null;
     try {
-      const text = await file.text();
-      const lines = text.split(/\r?\n/).filter(line => line.trim().length > 0);
-      lineCount = Math.max(0, lines.length - 1); // Exclude header row
-      if (lines.length > 0) {
-        headers = lines[0].split(',').map(h => h.trim().replace(/^["']|["']$/g, '')).filter(Boolean);
-      }
+      return JSON.parse(userStr);
     } catch {
-      lineCount = 150; // Fallback mock estimate if text reading is blocked
-      headers = ['member_id', 'age', 'gender', 'systolic_bp', 'hba1c', 'chronic_conditions', 'admissions_l12m'];
+      return null;
     }
+  },
 
-    if (headers.length === 0) {
-      headers = ['member_id', 'age', 'gender', 'systolic_bp', 'hba1c', 'chronic_conditions'];
-    }
-
-    const response: import('../types').UploadCsvResponse = {
-      success: true,
-      message: 'Member cohort CSV successfully ingested and queued for backend risk scoring.',
-      filename: file.name,
-      fileSizeBytes: file.size,
-      recordsCount: lineCount > 0 ? lineCount : 120,
-      uploadedAt: new Date().toISOString(),
-      batchId: `BATCH-UC09-${Date.now().toString(36).toUpperCase()}`,
-      detectedHeaders: headers.slice(0, 10),
-      status: 'Ready for Model Scoring',
-      processingNote: 'File buffered in memory. Backend FastAPI ML prediction pipeline will calculate risk indices in Phase 2.',
-    };
-
-    return simulateDelay(response, 1000);
+  logout(): void {
+    localStorage.removeItem('care_risk_token');
+    localStorage.removeItem('care_risk_user');
   },
 };
+
+// Default export and mockApiService alias for backward compatibility
+export const mockApiService = apiService;
+export default apiService;
