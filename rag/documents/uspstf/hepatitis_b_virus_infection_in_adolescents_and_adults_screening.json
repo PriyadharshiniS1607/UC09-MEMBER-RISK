@@ -1,0 +1,10 @@
+{
+  "source": "USPSTF",
+  "source_type": "clinical_preventive_recommendation",
+  "title": "Hepatitis B Virus Infection in Adolescents and Adults: Screening",
+  "population": null,
+  "recommendation": "Recommendations made by the USPSTF are independent of the U.S. government. They should not be construed as an official position of the Agency for Healthcare Research and Quality or the U.S. Department of Health and Human Services. An estimated 862,000 persons in the US are living with chronic infection with hepatitis B virus (HBV). 1 Persons born in regions with a prevalence of HBV infection of 2% or greater, such as countries in Africa and Asia, the Pacific Islands, and parts of South America, often become infected at birth and account for up to 95% of newly reported chronic infections in the US. Other high-prevalence populations include persons who inject drugs; men who have sex with men; persons with HIV infection; and sex partners, needle-sharing contacts, and household contacts of persons with chronic HBV infection. 2",
+  "grade": "B",
+  "release_date": "August 21, 2020",
+  "source_url": "https://www.uspreventiveservicestaskforce.org/uspstf/recommendation/hepatitis-b-virus-infection-screening"
+}
