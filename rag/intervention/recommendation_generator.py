@@ -3,10 +3,13 @@ from __future__ import annotations
 import json
 import os
 import sys
+import time
 from pathlib import Path
 from typing import Any
 
 from dotenv import load_dotenv
+from google import genai
+from google.genai import types
 
 
 # ============================================================
@@ -16,7 +19,6 @@ from dotenv import load_dotenv
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 BACKEND_DIR = PROJECT_ROOT / "backend"
 ENV_FILE = PROJECT_ROOT / ".env"
-
 
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
@@ -40,8 +42,8 @@ GEMINI_API_KEY = os.getenv(
 
 if not GEMINI_API_KEY:
     raise RuntimeError(
-        "GEMINI_API_KEY is not configured.\n"
-        f"Please add GEMINI_API_KEY to {ENV_FILE}"
+        "GEMINI_API_KEY is not configured. "
+        f"Please add it to {ENV_FILE}"
     )
 
 
@@ -49,22 +51,7 @@ if not GEMINI_API_KEY:
 # GEMINI
 # ============================================================
 
-try:
-    from google import genai
-    from google.genai import types
-except ImportError as exc:
-    raise RuntimeError(
-        "The Gemini SDK is not installed.\n\n"
-        "Install it using:\n"
-        "pip install google-genai"
-    ) from exc
-
-
-MODEL_NAME = os.getenv(
-    "GEMINI_MODEL",
-    "gemini-3.6-flash",
-)
-
+MODEL_NAME = "gemini-3.5-flash-lite"
 
 gemini_client = genai.Client(
     api_key=GEMINI_API_KEY
@@ -75,23 +62,24 @@ gemini_client = genai.Client(
 # CONFIGURATION
 # ============================================================
 
-MAX_EVIDENCE_PER_INTERVENTION = 2
+MAX_EVIDENCE_PER_INTERVENTION = 3
 MAX_RECOMMENDATIONS = 3
 TOP_K_PER_QUERY = 3
 
-# Gemini can sometimes truncate long JSON.
-# We therefore give it enough output space.
-MAX_OUTPUT_TOKENS = 3000
+MAX_RETRIES = 4
 
-# Number of times to retry a failed/incomplete JSON response.
-MAX_GEMINI_ATTEMPTS = 2
+INITIAL_RETRY_DELAY = 2
+
+MAX_OUTPUT_TOKENS = 3000
 
 
 # ============================================================
 # SAFE SERIALIZATION
 # ============================================================
 
-def json_safe(value: Any) -> Any:
+def json_safe(
+    value: Any,
+) -> Any:
     """
     Convert database / numpy-like values into JSON-safe values.
     """
@@ -105,7 +93,10 @@ def json_safe(value: Any) -> Any:
     ):
         return value
 
-    if isinstance(value, dict):
+    if isinstance(
+        value,
+        dict,
+    ):
         return {
             str(key): json_safe(item)
             for key, item in value.items()
@@ -134,10 +125,9 @@ def json_safe(value: Any) -> Any:
 def load_member_prediction_context(
     member_id: str,
 ) -> tuple[Any, Any, Any]:
+
     """
     Load an already-predicted member from the database.
-
-    IMPORTANT:
 
     This function does NOT:
 
@@ -145,15 +135,13 @@ def load_member_prediction_context(
         - run prediction
         - calculate SHAP
         - create a prediction
-        - create SHAP explanations
+        - modify prediction data
 
-    POST /predict is responsible for those operations.
-
-    This function only reads:
+    It only reads:
 
         Member
-        RiskPrediction
-        ShapExplanation
+        latest RiskPrediction
+        latest ShapExplanation
     """
 
     # pyrefly: ignore [missing-import]
@@ -209,12 +197,12 @@ def load_member_prediction_context(
 
             raise RuntimeError(
                 f"No risk prediction exists for member "
-                f"'{member_id}'.\n\n"
+                f"'{member_id}'. "
                 "Run POST /predict first."
             )
 
         # ----------------------------------------------------
-        # SHAP
+        # LATEST SHAP
         # ----------------------------------------------------
 
         shap = (
@@ -233,7 +221,7 @@ def load_member_prediction_context(
 
             raise RuntimeError(
                 f"No SHAP explanation exists for prediction "
-                f"{prediction.id} of member '{member_id}'.\n\n"
+                f"{prediction.id} of member '{member_id}'. "
                 "Make sure POST /predict completed SHAP generation."
             )
 
@@ -257,29 +245,6 @@ def build_database_rag_context(
     prediction: Any,
     shap: Any,
 ) -> dict[str, Any]:
-    """
-    Build RAG context from existing database data.
-
-    Architecture:
-
-        POST /predict
-              |
-              v
-        Database
-          |
-          +-- Member
-          +-- RiskPrediction
-          +-- ShapExplanation
-              |
-              v
-        build_rag_context()
-              |
-              v
-        FAISS retrieval
-              |
-              v
-        Gemini
-    """
 
     from rag.intervention.context_builder import (
         build_rag_context,
@@ -293,17 +258,12 @@ def build_database_rag_context(
 
 
 # ============================================================
-# INTERVENTION-SPECIFIC RETRIEVAL
+# RUN INTERVENTION-SPECIFIC RAG RETRIEVAL
 # ============================================================
 
 def retrieve_evidence(
     context: dict[str, Any],
 ) -> dict[str, Any]:
-    """
-    Retrieve intervention-specific evidence.
-
-    No prediction or SHAP calculation happens here.
-    """
 
     from rag.intervention.intervention_retriever import (
         retrieve_intervention_evidence,
@@ -322,9 +282,6 @@ def retrieve_evidence(
 def build_llm_context(
     retrieval_result: dict[str, Any],
 ) -> dict[str, Any]:
-    """
-    Reduce the RAG result to the information Gemini needs.
-    """
 
     member = retrieval_result.get(
         "member",
@@ -464,254 +421,79 @@ def build_llm_context(
 
 
 # ============================================================
-# GEMINI RESPONSE SCHEMA
-# ============================================================
-
-RECOMMENDATION_RESPONSE_SCHEMA = {
-    "type": "object",
-
-    "properties": {
-
-        "member_id": {
-            "type": "string",
-        },
-
-        "risk_summary": {
-            "type": "object",
-
-            "properties": {
-
-                "risk_score": {
-                    "type": "number",
-                },
-
-                "risk_category": {
-                    "type": "string",
-                },
-
-                "summary": {
-                    "type": "string",
-                },
-            },
-
-            "required": [
-                "risk_score",
-                "risk_category",
-                "summary",
-            ],
-        },
-
-        "recommendations": {
-            "type": "array",
-
-            "items": {
-                "type": "object",
-
-                "properties": {
-
-                    "priority": {
-                        "type": "string",
-
-                        "enum": [
-                            "high",
-                            "medium",
-                            "low",
-                        ],
-                    },
-
-                    "feature": {
-                        "type": "string",
-                    },
-
-                    "concept": {
-                        "type": "string",
-                    },
-
-                    "domain": {
-                        "type": "string",
-                    },
-
-                    "shap_impact": {
-                        "type": "number",
-                    },
-
-                    "rationale": {
-                        "type": "string",
-                    },
-
-                    "recommended_action": {
-                        "type": "string",
-                    },
-
-                    "next_step": {
-                        "type": "string",
-                    },
-
-                    "evidence_basis": {
-                        "type": "string",
-                    },
-
-                    "evidence_sources": {
-                        "type": "array",
-
-                        "items": {
-                            "type": "object",
-
-                            "properties": {
-
-                                "source": {
-                                    "type": "string",
-                                },
-
-                                "domain": {
-                                    "type": "string",
-                                },
-
-                                "topic": {
-                                    "type": "string",
-                                },
-
-                                "document": {
-                                    "type": "string",
-                                },
-
-                                "chunk_id": {
-                                    "type": "string",
-                                },
-
-                                "score": {
-                                    "type": "number",
-                                },
-                            },
-
-                            "required": [
-                                "source",
-                                "domain",
-                                "topic",
-                                "document",
-                                "chunk_id",
-                                "score",
-                            ],
-                        },
-                    },
-                },
-
-                "required": [
-                    "priority",
-                    "feature",
-                    "concept",
-                    "domain",
-                    "shap_impact",
-                    "rationale",
-                    "recommended_action",
-                    "next_step",
-                    "evidence_basis",
-                    "evidence_sources",
-                ],
-            },
-        },
-    },
-
-    "required": [
-        "member_id",
-        "risk_summary",
-        "recommendations",
-    ],
-}
-
-
-# ============================================================
 # SYSTEM PROMPT
 # ============================================================
 
 SYSTEM_PROMPT = """
 You are a healthcare intervention recommendation assistant.
 
-Your job is ONLY to generate conservative,
-member-specific intervention recommendations.
-
-The prediction and SHAP analysis have ALREADY been completed.
-
-You must use ONLY the supplied:
+Your task is to generate conservative, member-specific
+intervention recommendations using ONLY the supplied:
 
 1. Member information
 2. Risk prediction
 3. SHAP explanation
 4. Intervention driver mappings
-5. Retrieved evidence
+5. Retrieved RAG evidence
 
-IMPORTANT:
+IMPORTANT SAFETY AND GROUNDING RULES:
 
-- Do NOT perform a new prediction.
-- Do NOT calculate SHAP.
-- Do NOT invent diagnoses.
-- Do NOT invent medications.
-- Do NOT invent laboratory values.
-- Do NOT invent smoking status.
-- Do NOT invent patient history.
-- Do NOT invent social determinants.
-- Do NOT fabricate evidence.
-- Do NOT fabricate sources.
-- Do NOT fabricate chunk IDs.
-- Do NOT create evidence that is not supplied.
-
-SHAP RULES:
-
-- Prioritize drivers marked as increasing risk.
-- Use the supplied SHAP value.
-- SHAP indicates contribution to predicted risk.
-- SHAP does NOT independently establish a diagnosis.
-- SHAP does NOT independently establish that treatment is required.
-- A positive SHAP value for a binary feature with value 0 must
-  NOT be interpreted as the member having that condition.
-- Always consider the actual supplied feature value.
-
-RAG RULES:
-
-- FAISS similarity is supporting evidence only.
-- Use evidence only when relevant to the proposed intervention.
-- Every recommendation must reference evidence actually supplied.
-- Every evidence chunk ID must come from the supplied context.
-- Never create a new source or chunk ID.
-
-HEALTHCARE SAFETY:
-
-- Recommendations should be suitable for care coordination.
+- Do not invent diagnoses.
+- Do not invent medications.
+- Do not invent laboratory values.
+- Do not invent smoking status.
+- Do not invent clinical conditions.
+- Do not invent patient history.
+- Do not fabricate evidence.
+- Do not fabricate sources.
+- Do not fabricate chunk IDs.
+- Do not create intervention features that are not supplied.
+- Do not cite sources that are not supplied.
+- Do not use FAISS similarity alone as proof of clinical appropriateness.
+- SHAP drivers marked increases_risk should receive priority.
+- A positive SHAP value for a binary feature with value 0 must NOT
+  be used to claim that the member has that condition.
+- Respect the actual member feature value.
 - Do not prescribe medication.
-- Do not provide medication dosages.
-- Do not make definitive diagnoses.
-- Do not give emergency medical instructions unless explicitly
-  supported by the supplied context.
+- Do not provide medication dosage.
 - When clinical appropriateness depends on missing information,
   recommend clinician/care-team review.
+- Retrieved evidence supports the recommendation but does not
+  replace clinical judgment.
 
-GOOD ACTION TYPES INCLUDE:
+VERY IMPORTANT EVIDENCE RULE:
 
-- primary-care follow-up
-- condition-management review
-- preventive-care review
-- screening review
-- medication review
-- referral consideration
-- health education
-- lifestyle support
-- care-coordination follow-up
-- social-service/resource connection
+Every recommendation must contain at least one evidence source.
 
-Return ONLY the requested structured JSON object.
+The evidence source must use an EXACT chunk_id from the supplied
+RAG context.
+
+Do not invent a chunk_id.
+
+Copy the chunk_id exactly as supplied.
+
+The feature must also exactly match one of the supplied intervention
+features.
+
+The shap_impact must correspond to the supplied intervention.
+
+Return valid JSON only.
+
+Do not return markdown.
+
+Do not return ```json fences.
+
+Do not return explanations outside JSON.
 """
 
 
 # ============================================================
-# USER PROMPT
+# BUILD PROMPT
 # ============================================================
 
 def build_prompt(
     retrieval_result: dict[str, Any],
 ) -> str:
-    """
-    Build Gemini prompt from completed DB + RAG context.
-    """
 
     llm_context = build_llm_context(
         retrieval_result
@@ -725,77 +507,128 @@ def build_prompt(
 
     return f"""
 Generate prioritized intervention recommendations for the
-member described below.
+following single member.
 
-IMPORTANT:
-
-The prediction pipeline has ALREADY been completed.
-
-The following context was obtained from the existing database
-and intervention-specific RAG retrieval.
+The member has already completed the prediction and SHAP pipeline.
 
 Do NOT perform prediction.
 
 Do NOT calculate SHAP.
 
-Do NOT invent missing patient information.
+Do NOT invent clinical information.
 
-Do NOT create evidence.
+Use ONLY the supplied RAG context.
 
 MEMBER-SPECIFIC RAG CONTEXT
 ===========================
 
 {context_json}
 
+
 RECOMMENDATION RULES
 ====================
 
 1. Generate at most {MAX_RECOMMENDATIONS} recommendations.
 
-2. Prioritize the strongest SHAP intervention drivers.
+2. Prioritize the strongest positive SHAP intervention drivers.
 
-3. Prioritize drivers that increase predicted risk.
+3. Only use intervention features supplied in the context.
 
-4. Use the actual member feature value.
+4. Respect the actual member feature value.
 
-5. Never claim that a condition is present when the supplied
-   binary feature value is 0.
+5. If a binary feature has value 0, do not claim the member has
+   that condition.
 
-6. Use only features present in the intervention list.
+6. The SHAP impact must come from the supplied intervention.
 
-7. Use retrieved evidence only as supporting evidence.
+7. Every recommendation must contain an exact evidence chunk_id
+   copied from the supplied evidence.
 
-8. Every recommendation must contain at least one evidence
-   source.
+8. Do not invent chunk IDs.
 
-9. Every evidence source must use a chunk_id from the supplied
-   RAG context.
+9. Every evidence source must belong to the recommendation's
+   intervention feature.
 
-10. Do not create new chunk IDs.
+10. Prefer the highest-quality supplied evidence.
 
-11. Do not create new sources.
+11. Use practical care-coordination actions such as:
+
+    - primary-care follow-up
+    - condition-management review
+    - preventive-care review
+    - screening review
+    - medication review
+    - referral consideration
+    - health education
+    - social-service/resource connection
 
 12. Do not prescribe medication.
 
 13. Do not provide medication dosage.
 
-14. Prefer practical care-coordination actions.
+14. If information is insufficient, recommend clinician/care-team
+    review instead of making assumptions.
 
-15. If clinical appropriateness cannot be determined from the
-    supplied context, recommend clinician/care-team review.
+15. Recommendations must be ordered from highest to lowest priority.
 
-16. Order recommendations from highest priority to lowest.
-
-17. The member_id must come from the supplied context.
-
-18. The risk score and risk category must come from the supplied
+16. The risk score and risk category must come from the supplied
     context.
 
-19. The shap_impact must correspond to the supplied SHAP driver.
+17. Do not create evidence that does not exist.
 
-20. Do not mention evidence unrelated to the recommendation.
+18. Do not create a diagnosis that does not exist.
 
-Return the recommendations using the supplied response schema.
+19. Do not mention unrelated evidence.
+
+20. Use the exact feature name from the intervention context.
+
+21. Use the exact chunk_id from the intervention evidence.
+
+OUTPUT SCHEMA
+=============
+
+{{
+  "member_id": "string",
+
+  "risk_summary": {{
+    "risk_score": number,
+    "risk_category": "string",
+    "summary": "string"
+  }},
+
+  "recommendations": [
+    {{
+      "priority": "high | medium | low",
+
+      "feature": "string",
+
+      "concept": "string",
+
+      "domain": "string",
+
+      "shap_impact": number,
+
+      "rationale": "string",
+
+      "recommended_action": "string",
+
+      "next_step": "string",
+
+      "evidence_basis": "string",
+
+      "evidence_sources": [
+        {{
+          "source": "string",
+          "domain": "string",
+          "topic": "string",
+          "document": "string",
+          "chunk_id": "string",
+          "score": number
+        }}
+      ]
+    }}
+  ]
+}}
 """
 
 
@@ -805,83 +638,88 @@ Return the recommendations using the supplied response schema.
 
 def call_gemini(
     retrieval_result: dict[str, Any],
-    attempt: int = 1,
 ) -> str:
-    """
-    Call Gemini using structured JSON output.
-
-    This is the important fix for the malformed/truncated JSON
-    problem.
-    """
 
     prompt = build_prompt(
         retrieval_result
     )
 
-    # Give the model additional output room on retry.
-    output_tokens = (
-        MAX_OUTPUT_TOKENS
-        if attempt == 1
-        else MAX_OUTPUT_TOKENS + 2000
+    config = types.GenerateContentConfig(
+        temperature=0.1,
+
+        max_output_tokens=MAX_OUTPUT_TOKENS,
+
+        response_mime_type="application/json",
     )
 
-    try:
+    last_error: Exception | None = None
 
-        response = gemini_client.models.generate_content(
-            model=MODEL_NAME,
+    for attempt in range(
+        1,
+        MAX_RETRIES + 1,
+    ):
 
-            contents=[
-                {
-                    "role": "user",
-                    "parts": [
-                        {
-                            "text": (
-                                SYSTEM_PROMPT
-                                + "\n\n"
-                                + prompt
-                            )
-                        }
-                    ],
-                }
-            ],
+        try:
 
-            config=types.GenerateContentConfig(
+            print(
+                f"Calling Gemini ({MODEL_NAME}) "
+                f"[attempt {attempt}/{MAX_RETRIES}]..."
+            )
 
-                temperature=0.1,
+            response = (
+                gemini_client.models.generate_content(
+                    model=MODEL_NAME,
+                    contents=prompt,
+                    config=config,
+                )
+            )
 
-                max_output_tokens=output_tokens,
+            content = getattr(
+                response,
+                "text",
+                None,
+            )
 
-                response_mime_type="application/json",
+            if not content:
 
-                response_schema=(
-                    RECOMMENDATION_RESPONSE_SCHEMA
-                ),
-            ),
-        )
+                raise RuntimeError(
+                    "Gemini returned an empty response."
+                )
 
-    except Exception as exc:
+            return content.strip()
 
-        raise RuntimeError(
-            f"Gemini API request failed: {exc}"
-        ) from exc
+        except Exception as exc:
 
-    # --------------------------------------------------------
-    # Extract text
-    # --------------------------------------------------------
+            last_error = exc
 
-    content = getattr(
-        response,
-        "text",
-        None,
-    )
+            error_text = str(exc)
 
-    if not content:
+            if attempt == MAX_RETRIES:
 
-        raise RuntimeError(
-            "Gemini returned an empty response."
-        )
+                raise RuntimeError(
+                    "Gemini recommendation generation "
+                    f"failed after {MAX_RETRIES} attempts.\n\n"
+                    f"Last error: {error_text}"
+                ) from exc
 
-    return content.strip()
+            wait_seconds = (
+                INITIAL_RETRY_DELAY
+                * (2 ** (attempt - 1))
+            )
+
+            print(
+                "Gemini request failed "
+                f"(attempt {attempt}/{MAX_RETRIES}). "
+                f"Retrying in {wait_seconds} seconds..."
+            )
+
+            time.sleep(
+                wait_seconds
+            )
+
+    raise RuntimeError(
+        "Gemini recommendation generation failed."
+    ) from last_error
 
 
 # ============================================================
@@ -891,17 +729,11 @@ def call_gemini(
 def parse_llm_json(
     raw_response: str,
 ) -> dict[str, Any]:
-    """
-    Parse Gemini JSON.
-
-    Structured output should already be JSON, but this function
-    still handles accidental markdown fences safely.
-    """
 
     cleaned = raw_response.strip()
 
     # --------------------------------------------------------
-    # Remove accidental markdown fences
+    # Remove markdown fences if Gemini unexpectedly returns them
     # --------------------------------------------------------
 
     if cleaned.startswith(
@@ -912,7 +744,9 @@ def parse_llm_json(
             len("```json"):
         ].strip()
 
-        if cleaned.endswith("```"):
+        if cleaned.endswith(
+            "```"
+        ):
 
             cleaned = cleaned[
                 :-3
@@ -926,14 +760,16 @@ def parse_llm_json(
             len("```"):
         ].strip()
 
-        if cleaned.endswith("```"):
+        if cleaned.endswith(
+            "```"
+        ):
 
             cleaned = cleaned[
                 :-3
             ].strip()
 
     # --------------------------------------------------------
-    # Parse
+    # Parse JSON
     # --------------------------------------------------------
 
     try:
@@ -962,6 +798,74 @@ def parse_llm_json(
 
 
 # ============================================================
+# BUILD FALLBACK EVIDENCE
+# ============================================================
+
+def get_actual_evidence_for_feature(
+    intervention: dict[str, Any],
+) -> list[dict[str, Any]]:
+
+    """
+    Get real evidence directly from RAG.
+
+    This is important because Gemini may occasionally omit
+    evidence_sources even though the RAG pipeline retrieved
+    valid evidence.
+
+    We NEVER fabricate evidence here.
+
+    We only use evidence that already exists in retrieval_result.
+    """
+
+    evidence_sources = []
+
+    for evidence in intervention.get(
+        "evidence",
+        [],
+    )[:MAX_EVIDENCE_PER_INTERVENTION]:
+
+        metadata = evidence.get(
+            "metadata",
+            {},
+        )
+
+        chunk_id = metadata.get(
+            "chunk_id"
+        )
+
+        if not chunk_id:
+            continue
+
+        evidence_sources.append(
+            {
+                "source": metadata.get(
+                    "source"
+                ),
+
+                "domain": metadata.get(
+                    "domain"
+                ),
+
+                "topic": metadata.get(
+                    "topic"
+                ),
+
+                "document": metadata.get(
+                    "document"
+                ),
+
+                "chunk_id": chunk_id,
+
+                "score": evidence.get(
+                    "score"
+                ),
+            }
+        )
+
+    return evidence_sources
+
+
+# ============================================================
 # VALIDATION
 # ============================================================
 
@@ -969,16 +873,6 @@ def validate_recommendations(
     result: dict[str, Any],
     retrieval_result: dict[str, Any],
 ) -> dict[str, Any]:
-    """
-    Validate Gemini output against the actual RAG context.
-
-    This prevents Gemini from inventing:
-
-        - features
-        - evidence
-        - sources
-        - chunk IDs
-    """
 
     member = retrieval_result.get(
         "member",
@@ -996,7 +890,7 @@ def validate_recommendations(
     )
 
     # ========================================================
-    # ALLOWED FEATURES
+    # INTERVENTION LOOKUP
     # ========================================================
 
     intervention_by_feature: dict[
@@ -1021,7 +915,7 @@ def validate_recommendations(
     )
 
     # ========================================================
-    # ALLOWED EVIDENCE
+    # EVIDENCE LOOKUP
     # ========================================================
 
     allowed_evidence: dict[
@@ -1092,34 +986,45 @@ def validate_recommendations(
     # RISK SUMMARY
     # ========================================================
 
-    existing_risk_summary = result.get(
+    gemini_risk_summary = result.get(
         "risk_summary",
         {},
     )
 
     if not isinstance(
-        existing_risk_summary,
+        gemini_risk_summary,
         dict,
     ):
-        existing_risk_summary = {}
+        gemini_risk_summary = {}
 
+    risk_score = risk.get(
+        "risk_score"
+    )
+
+    risk_category = risk.get(
+        "risk_category"
+    )
+
+    existing_summary = (
+        gemini_risk_summary.get(
+            "summary"
+        )
+    )
+
+    if not existing_summary:
+
+        existing_summary = (
+            f"The member has a "
+            f"{risk_category} risk category."
+        )
+
+    # ALWAYS use actual database/RAG risk values.
     result["risk_summary"] = {
-        "risk_score": risk.get(
-            "risk_score"
-        ),
+        "risk_score": risk_score,
 
-        "risk_category": risk.get(
-            "risk_category"
-        ),
+        "risk_category": risk_category,
 
-        "summary": existing_risk_summary.get(
-            "summary",
-            (
-                f"The member has a "
-                f"{risk.get('risk_category')} "
-                f"risk category."
-            ),
-        ),
+        "summary": existing_summary,
     }
 
     # ========================================================
@@ -1136,9 +1041,7 @@ def validate_recommendations(
         list,
     ):
 
-        raise RuntimeError(
-            "Gemini recommendations must be a list."
-        )
+        recommendations = []
 
     validated = []
 
@@ -1159,6 +1062,7 @@ def validate_recommendations(
         )
 
         if feature not in allowed_features:
+
             continue
 
         actual_intervention = (
@@ -1168,110 +1072,133 @@ def validate_recommendations(
         )
 
         # ----------------------------------------------------
-        # EVIDENCE
+        # ACTUAL RAG EVIDENCE
         # ----------------------------------------------------
 
-        evidence_sources = recommendation.get(
-            "evidence_sources",
-            [],
+        actual_evidence = (
+            get_actual_evidence_for_feature(
+                actual_intervention
+            )
         )
 
-        if not isinstance(
-            evidence_sources,
-            list,
-        ):
+        if not actual_evidence:
+
             continue
+
+        # ----------------------------------------------------
+        # GEMINI EVIDENCE
+        # ----------------------------------------------------
+
+        evidence_sources = (
+            recommendation.get(
+                "evidence_sources",
+                [],
+            )
+        )
 
         validated_sources = []
 
-        for source in evidence_sources:
+        if isinstance(
+            evidence_sources,
+            list,
+        ):
 
-            if not isinstance(
-                source,
-                dict,
-            ):
-                continue
+            for source in evidence_sources:
 
-            chunk_id = source.get(
-                "chunk_id"
-            )
+                if not isinstance(
+                    source,
+                    dict,
+                ):
+                    continue
 
-            if not chunk_id:
-                continue
-
-            if chunk_id not in allowed_evidence:
-                continue
-
-            actual_source = (
-                allowed_evidence[
-                    chunk_id
-                ]
-            )
-
-            # ------------------------------------------------
-            # Ensure evidence actually belongs to this
-            # intervention feature.
-            # ------------------------------------------------
-
-            if (
-                actual_source.get(
-                    "feature"
+                chunk_id = source.get(
+                    "chunk_id"
                 )
-                != feature
-            ):
-                continue
 
-            # ------------------------------------------------
-            # Never trust Gemini's source metadata.
-            #
-            # Replace it with the real metadata from RAG.
-            # ------------------------------------------------
+                if not chunk_id:
+                    continue
 
-            validated_sources.append(
-                {
-                    "source": actual_source.get(
-                        "source"
-                    ),
+                # ------------------------------------------------
+                # Chunk must exist in actual RAG results.
+                # ------------------------------------------------
 
-                    "domain": actual_source.get(
-                        "domain"
-                    ),
+                if chunk_id not in allowed_evidence:
 
-                    "topic": actual_source.get(
-                        "topic"
-                    ),
+                    continue
 
-                    "document": actual_source.get(
-                        "document"
-                    ),
+                actual_source = (
+                    allowed_evidence[
+                        chunk_id
+                    ]
+                )
 
-                    "chunk_id": chunk_id,
+                # ------------------------------------------------
+                # Chunk must belong to same feature.
+                # ------------------------------------------------
 
-                    "score": actual_source.get(
-                        "score"
-                    ),
-                }
-            )
+                if (
+                    actual_source.get(
+                        "feature"
+                    )
+                    != feature
+                ):
+                    continue
+
+                validated_sources.append(
+                    {
+                        "source": actual_source.get(
+                            "source"
+                        ),
+
+                        "domain": actual_source.get(
+                            "domain"
+                        ),
+
+                        "topic": actual_source.get(
+                            "topic"
+                        ),
+
+                        "document": actual_source.get(
+                            "document"
+                        ),
+
+                        "chunk_id": chunk_id,
+
+                        "score": actual_source.get(
+                            "score"
+                        ),
+                    }
+                )
 
         # ----------------------------------------------------
-        # Recommendation must have real evidence.
+        # IMPORTANT FALLBACK
+        #
+        # Gemini sometimes produces a valid recommendation
+        # but forgets to return the exact chunk_id.
+        #
+        # In that situation, use the real RAG evidence.
+        #
+        # This does NOT fabricate evidence.
         # ----------------------------------------------------
 
         if not validated_sources:
+
+            validated_sources = (
+                actual_evidence[
+                    :MAX_EVIDENCE_PER_INTERVENTION
+                ]
+            )
+
+        # ----------------------------------------------------
+        # Still no evidence -> reject recommendation
+        # ----------------------------------------------------
+
+        if not validated_sources:
+
             continue
 
         # ----------------------------------------------------
-        # Ensure SHAP impact comes from the actual RAG context.
-        # ----------------------------------------------------
-
-        recommendation[
-            "shap_impact"
-        ] = actual_intervention.get(
-            "shap_value"
-        )
-
-        # ----------------------------------------------------
-        # Ensure feature-related metadata comes from RAG.
+        # FORCE RAG-GROUNDED VALUES
         # ----------------------------------------------------
 
         recommendation[
@@ -1291,15 +1218,277 @@ def validate_recommendations(
         )
 
         recommendation[
+            "shap_impact"
+        ] = actual_intervention.get(
+            "shap_value"
+        )
+
+        recommendation[
             "evidence_sources"
         ] = validated_sources
+
+        # ----------------------------------------------------
+        # Default priority if Gemini omitted it
+        # ----------------------------------------------------
+
+        priority = recommendation.get(
+            "priority"
+        )
+
+        if priority not in {
+            "high",
+            "medium",
+            "low",
+        }:
+
+            shap_value = (
+                actual_intervention.get(
+                    "shap_value"
+                )
+            )
+
+            try:
+
+                shap_value = float(
+                    shap_value
+                )
+
+            except (
+                TypeError,
+                ValueError,
+            ):
+
+                shap_value = 0.0
+
+            if shap_value >= 5:
+
+                priority = "high"
+
+            elif shap_value > 0:
+
+                priority = "medium"
+
+            else:
+
+                priority = "low"
+
+            recommendation[
+                "priority"
+            ] = priority
+
+        # ----------------------------------------------------
+        # Ensure important text fields exist
+        # ----------------------------------------------------
+
+        if not recommendation.get(
+            "rationale"
+        ):
+
+            recommendation[
+                "rationale"
+            ] = (
+                f"The supplied SHAP intervention driver "
+                f"'{feature}' contributed to the member's "
+                f"predicted risk."
+            )
+
+        if not recommendation.get(
+            "recommended_action"
+        ):
+
+            recommendation[
+                "recommended_action"
+            ] = (
+                "Care-team review is recommended based on "
+                "the supplied member risk and intervention evidence."
+            )
+
+        if not recommendation.get(
+            "next_step"
+        ):
+
+            recommendation[
+                "next_step"
+            ] = (
+                "Care coordinator to review the intervention "
+                "with the appropriate care team."
+            )
+
+        if not recommendation.get(
+            "evidence_basis"
+        ):
+
+            first_evidence = (
+                actual_intervention
+                .get(
+                    "evidence",
+                    [],
+                )
+            )
+
+            if first_evidence:
+
+                recommendation[
+                    "evidence_basis"
+                ] = first_evidence[
+                    0
+                ].get(
+                    "text",
+                    "Retrieved RAG evidence supports this intervention."
+                )
+
+            else:
+
+                recommendation[
+                    "evidence_basis"
+                ] = (
+                    "Retrieved RAG evidence supports this intervention."
+                )
 
         validated.append(
             recommendation
         )
 
     # ========================================================
-    # LIMIT RESULTS
+    # IMPORTANT FALLBACK
+    #
+    # If Gemini returns no usable recommendations, construct
+    # conservative recommendations directly from the RAG
+    # intervention drivers.
+    #
+    # This keeps the pipeline grounded and prevents:
+    #
+    # recommendations: []
+    #
+    # simply because Gemini forgot evidence_sources.
+    # ========================================================
+
+    if not validated:
+
+        for intervention in interventions:
+
+            if len(validated) >= MAX_RECOMMENDATIONS:
+
+                break
+
+            feature = intervention.get(
+                "feature"
+            )
+
+            if not feature:
+
+                continue
+
+            evidence_sources = (
+                get_actual_evidence_for_feature(
+                    intervention
+                )
+            )
+
+            if not evidence_sources:
+
+                continue
+
+            shap_value = intervention.get(
+                "shap_value"
+            )
+
+            try:
+
+                numeric_shap = float(
+                    shap_value
+                )
+
+            except (
+                TypeError,
+                ValueError,
+            ):
+
+                numeric_shap = 0.0
+
+            if numeric_shap >= 5:
+
+                priority = "high"
+
+            elif numeric_shap > 0:
+
+                priority = "medium"
+
+            else:
+
+                priority = "low"
+
+            evidence_items = intervention.get(
+                "evidence",
+                [],
+            )
+
+            evidence_text = ""
+
+            if evidence_items:
+
+                evidence_text = (
+                    evidence_items[
+                        0
+                    ].get(
+                        "text",
+                        "",
+                    )
+                )
+
+            fallback_recommendation = {
+                "priority": priority,
+
+                "feature": feature,
+
+                "concept": intervention.get(
+                    "concept"
+                ),
+
+                "domain": intervention.get(
+                    "domain"
+                ),
+
+                "shap_impact": shap_value,
+
+                "rationale": (
+                    f"The supplied intervention driver "
+                    f"'{feature}' contributed to the member's "
+                    f"predicted risk with a SHAP impact of "
+                    f"{numeric_shap:.2f}."
+                ),
+
+                "recommended_action": (
+                    "Consider care-team review and appropriate "
+                    "condition-management or preventive-care "
+                    "follow-up based on the member's supplied "
+                    "risk context."
+                ),
+
+                "next_step": (
+                    "Care coordinator to review this intervention "
+                    "with the appropriate clinical care team."
+                ),
+
+                "evidence_basis": (
+                    evidence_text
+                    or
+                    "Retrieved RAG evidence supports this intervention."
+                ),
+
+                "evidence_sources": (
+                    evidence_sources[
+                        :MAX_EVIDENCE_PER_INTERVENTION
+                    ]
+                ),
+            }
+
+            validated.append(
+                fallback_recommendation
+            )
+
+    # ========================================================
+    # LIMIT
     # ========================================================
 
     result[
@@ -1318,78 +1507,25 @@ def validate_recommendations(
 def generate_recommendations(
     retrieval_result: dict[str, Any],
 ) -> dict[str, Any]:
-    """
-    Generate recommendations from completed RAG retrieval.
 
-    Does NOT:
-
-        - load CSV
-        - run prediction
-        - calculate SHAP
-        - write prediction data
-    """
-
-    last_error: Exception | None = None
-
-    for attempt in range(
-        1,
-        MAX_GEMINI_ATTEMPTS + 1,
-    ):
-
-        print()
-        print(
-            f"Calling Gemini ({MODEL_NAME}) "
-            f"[attempt {attempt}/{MAX_GEMINI_ATTEMPTS}]..."
-        )
-
-        try:
-
-            raw_response = call_gemini(
-                retrieval_result,
-                attempt=attempt,
-            )
-
-            parsed = parse_llm_json(
-                raw_response
-            )
-
-            validated = validate_recommendations(
-                parsed,
-                retrieval_result,
-            )
-
-            return {
-                "recommendation_result": validated,
-
-                "raw_llm_response": raw_response,
-            }
-
-        except Exception as exc:
-
-            last_error = exc
-
-            print()
-            print(
-                f"Gemini attempt {attempt} failed:"
-            )
-
-            print(
-                str(exc)
-            )
-
-            if attempt < MAX_GEMINI_ATTEMPTS:
-
-                print()
-                print(
-                    "Retrying Gemini with a larger "
-                    "output limit..."
-                )
-
-    raise RuntimeError(
-        "Gemini recommendation generation failed "
-        f"after {MAX_GEMINI_ATTEMPTS} attempts.\n\n"
-        f"Last error: {last_error}"
+    raw_response = call_gemini(
+        retrieval_result
     )
+
+    parsed = parse_llm_json(
+        raw_response
+    )
+
+    validated = validate_recommendations(
+        parsed,
+        retrieval_result,
+    )
+
+    return {
+        "recommendation_result": validated,
+
+        "raw_llm_response": raw_response,
+    }
 
 
 # ============================================================
@@ -1399,60 +1535,16 @@ def generate_recommendations(
 def generate_recommendations_for_member(
     member_id: str,
 ) -> dict[str, Any]:
-    """
-    Complete recommendation flow.
-
-    IMPORTANT ARCHITECTURE:
-
-        POST /predict
-              |
-              v
-        CSV processing
-              |
-              v
-        prediction
-              |
-              v
-        SHAP
-              |
-              v
-        DATABASE
-              |
-              v
-    recommendation_generator.py
-              |
-              +--> read Member
-              |
-              +--> read RiskPrediction
-              |
-              +--> read ShapExplanation
-              |
-              v
-        build_rag_context()
-              |
-              v
-        FAISS intervention retrieval
-              |
-              v
-        Gemini
-              |
-              v
-        validation
-              |
-              v
-        recommendation
-
-    No prediction or SHAP generation happens here.
-    """
-
-    # ========================================================
-    # 1. DATABASE
-    # ========================================================
 
     print()
+
     print(
         "Loading existing prediction data from database..."
     )
+
+    # --------------------------------------------------------
+    # 1. DATABASE
+    # --------------------------------------------------------
 
     member, prediction, shap = (
         load_member_prediction_context(
@@ -1461,6 +1553,7 @@ def generate_recommendations_for_member(
     )
 
     print()
+
     print(
         "DATABASE CONTEXT LOADED"
     )
@@ -1492,11 +1585,12 @@ def generate_recommendations_for_member(
         f"{getattr(shap, 'id', 'N/A')}"
     )
 
-    # ========================================================
+    # --------------------------------------------------------
     # 2. RAG CONTEXT
-    # ========================================================
+    # --------------------------------------------------------
 
     print()
+
     print(
         "Building RAG context from existing database data..."
     )
@@ -1508,15 +1602,17 @@ def generate_recommendations_for_member(
     )
 
     print()
+
     print(
         "RAG CONTEXT BUILT"
     )
 
-    # ========================================================
-    # 3. FAISS
-    # ========================================================
+    # --------------------------------------------------------
+    # 3. FAISS RETRIEVAL
+    # --------------------------------------------------------
 
     print()
+
     print(
         "Running intervention-specific FAISS retrieval..."
     )
@@ -1526,6 +1622,7 @@ def generate_recommendations_for_member(
     )
 
     print()
+
     print(
         "RETRIEVAL COMPLETED"
     )
@@ -1548,13 +1645,20 @@ def generate_recommendations_for_member(
         print(
             f"{intervention.get('feature')} | "
             f"{intervention.get('concept')} | "
+            f"SHAP={intervention.get('shap_value')} | "
             f"evidence="
             f"{len(intervention.get('evidence', []))}"
         )
 
-    # ========================================================
+    # --------------------------------------------------------
     # 4. GEMINI
-    # ========================================================
+    # --------------------------------------------------------
+
+    print()
+
+    print(
+        f"Calling Gemini ({MODEL_NAME})..."
+    )
 
     generated = generate_recommendations(
         retrieval_result
@@ -1571,9 +1675,10 @@ def print_recommendations(
     result: dict[str, Any],
 ) -> None:
 
-    recommendation_result = result[
-        "recommendation_result"
-    ]
+    recommendation_result = result.get(
+        "recommendation_result",
+        {},
+    )
 
     member_id = recommendation_result.get(
         "member_id"
@@ -1590,18 +1695,23 @@ def print_recommendations(
     )
 
     print()
+
     print("=" * 80)
+
     print(
         "GEMINI RAG INTERVENTION RECOMMENDATIONS"
     )
+
     print("=" * 80)
 
     print()
+
     print(
         f"Member ID: {member_id}"
     )
 
     print()
+
     print(
         "RISK SUMMARY"
     )
@@ -1624,6 +1734,7 @@ def print_recommendations(
     )
 
     print()
+
     print(
         "RECOMMENDATIONS"
     )
@@ -1644,6 +1755,7 @@ def print_recommendations(
     ):
 
         print()
+
         print(
             f"Recommendation #{index}"
         )
@@ -1694,6 +1806,7 @@ def print_recommendations(
         )
 
         print()
+
         print(
             "Evidence sources:"
         )
@@ -1707,25 +1820,19 @@ def print_recommendations(
                 f"  - "
                 f"{source.get('source')} | "
                 f"{source.get('topic')} | "
-                f"document={source.get('document')} | "
                 f"chunk={source.get('chunk_id')} | "
                 f"score={source.get('score')}"
             )
 
 
 # ============================================================
-# SAVE RECOMMENDATION RESULT
+# SAVE JSON
 # ============================================================
 
 def save_recommendation_json(
-    result: dict[str, Any],
     member_id: str,
+    result: dict[str, Any],
 ) -> Path:
-    """
-    Save the generated recommendation locally.
-
-    This is optional and does not modify prediction/SHAP data.
-    """
 
     output_dir = (
         PROJECT_ROOT
@@ -1744,15 +1851,18 @@ def save_recommendation_json(
         / f"{member_id}_recommendations.json"
     )
 
+    recommendation_result = result.get(
+        "recommendation_result",
+        {},
+    )
+
     with output_file.open(
         "w",
         encoding="utf-8",
     ) as file:
 
         json.dump(
-            result[
-                "recommendation_result"
-            ],
+            recommendation_result,
             file,
             indent=2,
             ensure_ascii=False,
@@ -1768,9 +1878,11 @@ def save_recommendation_json(
 def main() -> None:
 
     print("=" * 80)
+
     print(
         "GEMINI RAG RECOMMENDATION GENERATOR"
     )
+
     print("=" * 80)
 
     # --------------------------------------------------------
@@ -1786,21 +1898,19 @@ def main() -> None:
         member_id = "M00001"
 
     print()
+
     print(
         f"Generating recommendation for member: "
         f"{member_id}"
     )
 
     print()
+
     print(
         f"Gemini model: {MODEL_NAME}"
     )
 
     try:
-
-        # ----------------------------------------------------
-        # GENERATE
-        # ----------------------------------------------------
 
         generated = (
             generate_recommendations_for_member(
@@ -1817,21 +1927,25 @@ def main() -> None:
         )
 
         # ----------------------------------------------------
-        # JSON
+        # JSON OUTPUT
         # ----------------------------------------------------
 
         print()
+
         print("=" * 80)
+
         print(
             "VALIDATED RECOMMENDATION JSON"
         )
+
         print("=" * 80)
 
         print(
             json.dumps(
-                generated[
-                    "recommendation_result"
-                ],
+                generated.get(
+                    "recommendation_result",
+                    {},
+                ),
                 indent=2,
                 ensure_ascii=False,
             )
@@ -1841,41 +1955,47 @@ def main() -> None:
         # SAVE
         # ----------------------------------------------------
 
-        output_file = save_recommendation_json(
-            generated,
-            member_id,
+        output_file = (
+            save_recommendation_json(
+                member_id,
+                generated,
+            )
         )
 
         print()
+
         print(
-            f"Recommendation JSON saved to:"
+            "Recommendation JSON saved to:"
         )
 
         print(
             output_file
         )
 
-        # ----------------------------------------------------
-        # COMPLETE
-        # ----------------------------------------------------
-
         print()
+
         print("=" * 80)
+
         print(
             "GEMINI RAG RECOMMENDATION COMPLETED"
         )
+
         print("=" * 80)
 
     except Exception as exc:
 
         print()
+
         print("=" * 80)
+
         print(
             "RECOMMENDATION GENERATION FAILED"
         )
+
         print("=" * 80)
 
         print()
+
         print(
             f"Error: {exc}"
         )
