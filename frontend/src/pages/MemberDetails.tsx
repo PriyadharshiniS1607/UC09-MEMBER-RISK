@@ -5,14 +5,11 @@ import {
   Activity, 
   AlertTriangle, 
   Plus, 
-  Mail, 
   MapPin, 
-  CheckCircle,
   Stethoscope,
   Hospital,
   Utensils,
   Info,
-  X,
   Sparkles,
   ClipboardList,
   HeartPulse
@@ -35,13 +32,6 @@ export const MemberDetails: React.FC = () => {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [activeTab, setActiveTab] = useState<MemberTab>('overview');
   const [loading, setLoading] = useState(true);
-
-  // Email Notification feedback state
-  const [emailState, setEmailState] = useState<{ sending: boolean; feedback: string | null; isError: boolean }>({
-    sending: false,
-    feedback: null,
-    isError: false,
-  });
 
   // Modal State for scheduling intervention
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -76,49 +66,6 @@ export const MemberDetails: React.FC = () => {
 
     fetchMemberData();
   }, [id]);
-
-  const handleSendRiskAlertEmail = async () => {
-    if (!member) return;
-    setEmailState({ sending: true, feedback: null, isError: false });
-
-    try {
-      const shapPayload = member.shapDrivers.map(d => ({
-        feature: d.feature,
-        value: d.value,
-        shap_value: d.shapValue,
-        description: d.description,
-      }));
-
-      const res = await apiService.sendRiskAlertEmail({
-        to_email: currentUser?.email || 'provider@healthfirst.org',
-        provider_name: 'Primary Care Team',
-        member_id: member.id,
-        member_name: member.id,
-        member_code: member.memberCode,
-        age: member.age,
-        gender: member.gender,
-        risk_level: member.riskSummary.riskLevel,
-        overall_score: Math.round(member.riskSummary.overallRiskScore),
-        shap_drivers: shapPayload,
-        portal_url: window.location.origin,
-      });
-
-      setEmailState({
-        sending: false,
-        feedback: res.message || 'Risk alert queued successfully.',
-        isError: false,
-      });
-      setTimeout(() => setEmailState(prev => ({ ...prev, feedback: null })), 6000);
-    } catch (err: any) {
-      console.error('Email alert error:', err);
-      setEmailState({
-        sending: false,
-        feedback: err?.response?.data?.detail || 'Failed to queue clinical risk email alert.',
-        isError: true,
-      });
-      setTimeout(() => setEmailState(prev => ({ ...prev, feedback: null })), 6000);
-    }
-  };
 
   const handleCreateIntervention = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -198,7 +145,6 @@ export const MemberDetails: React.FC = () => {
     );
   }
 
-  const isCareOrAdmin = currentUser?.role === 'care_manager' || currentUser?.role === 'payer_admin';
   const raw = member.rawBackendData;
 
   const tabs: { id: MemberTab; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
@@ -223,18 +169,6 @@ export const MemberDetails: React.FC = () => {
         </Link>
 
         <div className="flex items-center gap-2.5">
-          {/* Email Alert Trigger (Permitted for care_manager and payer_admin) */}
-          {isCareOrAdmin && (
-            <button
-              onClick={handleSendRiskAlertEmail}
-              disabled={emailState.sending}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-rose-500/15 hover:bg-rose-500/25 text-rose-300 border border-rose-500/30 text-xs font-semibold transition-all disabled:opacity-50"
-            >
-              <Mail className="w-3.5 h-3.5 text-rose-400" />
-              <span>{emailState.sending ? 'Sending Alert...' : 'Dispatch Risk Alert Email'}</span>
-            </button>
-          )}
-
           {currentUser?.role !== 'payer_viewer' && (
             <button
               onClick={() => setIsModalOpen(true)}
@@ -246,26 +180,6 @@ export const MemberDetails: React.FC = () => {
           )}
         </div>
       </div>
-
-      {/* Email Feedback Banner */}
-      {emailState.feedback && (
-        <div className={`p-3 rounded-xl border text-xs flex items-center justify-between animate-in fade-in ${
-          emailState.isError
-            ? 'bg-rose-500/10 border-rose-500/30 text-rose-300'
-            : 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300'
-        }`}>
-          <div className="flex items-center gap-2">
-            {emailState.isError ? <AlertTriangle className="w-4 h-4 text-rose-400" /> : <CheckCircle className="w-4 h-4 text-emerald-400" />}
-            <span>{emailState.feedback}</span>
-          </div>
-          <button
-            onClick={() => setEmailState({ sending: false, feedback: null, isError: false })}
-            className="text-slate-400 hover:text-white p-1"
-          >
-            <X className="w-3.5 h-3.5" />
-          </button>
-        </div>
-      )}
 
       {/* Member Demographics Compact Hero Header */}
       <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-5 shadow-xl">

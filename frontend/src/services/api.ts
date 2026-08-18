@@ -11,7 +11,6 @@ import {
   InterventionCategory,
   PredictionResponse,
   UploadCsvResponse,
-  EmailLog,
   ShapDriver,
   RagRecommendationResponse
 } from '../types';
@@ -524,72 +523,7 @@ export const apiService = {
     const response = await apiClient.get(`/recommendations/${encodeURIComponent(cleanId)}`);
     return response.data;
   },
-
-  // ============================================================
-  // EMAIL NOTIFICATION APIs
-  // ============================================================
-
-  async sendTestEmail(toEmail: string, subject?: string, body?: string): Promise<any> {
-    const response = await apiClient.post('/api/email/test', {
-      to_email: toEmail,
-      subject: subject || 'Test Notification Connection',
-      body: body || 'Test email from UC09 Member Risk System.',
-    });
-    return response.data;
-  },
-
-  async sendRiskAlertEmail(payload: {
-    to_email: string;
-    provider_name: string;
-    member_id: string;
-    member_name: string;
-    member_code: string;
-    age: number;
-    gender: string;
-    risk_level: string;
-    overall_score: number;
-    shap_drivers: { feature: string; value: any; shap_value: number; description?: string }[];
-    portal_url?: string;
-  }): Promise<any> {
-    const response = await apiClient.post('/api/email/alert/risk', payload);
-    return response.data;
-  },
-
-  async sendInterventionEmail(payload: {
-    to_email: string;
-    coordinator_name: string;
-    member_name: string;
-    member_code: string;
-    intervention_title: string;
-    category: string;
-    due_date: string;
-    priority: string;
-    description: string;
-    portal_url?: string;
-  }): Promise<any> {
-    const response = await apiClient.post('/api/email/alert/intervention', payload);
-    return response.data;
-  },
-
-  async sendWeeklyDigestEmail(payload: {
-    to_email: string;
-    coordinator_name: string;
-    total_members: number;
-    very_high_count: number;
-    high_count: number;
-    active_interventions: number;
-    flagged_members: { name: string; code: string; score: number; level: string; barrier: string }[];
-    portal_url?: string;
-    attach_report?: boolean;
-  }): Promise<any> {
-    const response = await apiClient.post('/api/email/digest', payload);
-    return response.data;
-  },
-
-  async getEmailSentLogs(): Promise<EmailLog[]> {
-    const response = await apiClient.get('/api/email/sent-logs');
-    return response.data || [];
-  },
 };
 
 export const mockApiService = apiService;
+

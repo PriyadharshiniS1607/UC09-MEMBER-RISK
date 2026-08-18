@@ -2,12 +2,10 @@ import React, { useState } from 'react';
 import { 
   Search, 
   Calendar,
-  Shield,
-  Mail
+  Shield
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { User } from '../../types';
-import { EmailActivityModal } from '../common/EmailActivityModal';
 
 interface HeaderProps {
   currentUser: User | null;
@@ -15,7 +13,6 @@ interface HeaderProps {
 
 export const Header: React.FC<HeaderProps> = ({ currentUser }) => {
   const [searchQuery, setSearchQuery] = useState('');
-  const [showEmailModal, setShowEmailModal] = useState(false);
   const navigate = useNavigate();
 
   const handleSearchSubmit = (e: React.FormEvent) => {
@@ -54,16 +51,6 @@ export const Header: React.FC<HeaderProps> = ({ currentUser }) => {
           <span>{todayStr}</span>
         </div>
 
-        {/* Email Activity Modal Launcher */}
-        <button
-          onClick={() => setShowEmailModal(true)}
-          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-800/60 hover:bg-slate-800 text-slate-300 hover:text-white border border-slate-700/80 text-xs font-semibold transition-all shadow-sm"
-          title="View Email Audit Logs"
-        >
-          <Mail className="w-3.5 h-3.5 text-teal-400" />
-          <span className="hidden sm:inline">Email Activity</span>
-        </button>
-
         {/* User Pill */}
         {currentUser && (
           <div className="flex items-center gap-2 pl-2 border-l border-slate-800">
@@ -81,12 +68,6 @@ export const Header: React.FC<HeaderProps> = ({ currentUser }) => {
           </div>
         )}
       </div>
-
-      {/* Email Activity Modal */}
-      <EmailActivityModal
-        isOpen={showEmailModal}
-        onClose={() => setShowEmailModal(false)}
-      />
     </header>
   );
 };

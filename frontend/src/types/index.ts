@@ -295,16 +295,6 @@ export interface UploadProgressState {
   error?: string;
 }
 
-export interface EmailLog {
-  id: string;
-  recipient: string;
-  subject: string;
-  timestamp: string;
-  type: string;
-  status: string;
-  file_path?: string;
-}
-
 // ============================================================
 // RAG RECOMMENDATION TYPES
 // ============================================================

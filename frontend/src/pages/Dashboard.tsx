@@ -8,9 +8,6 @@ import {
   Flame, 
   HeartPulse, 
   UploadCloud, 
-  Mail, 
-  CheckCircle2, 
-  AlertTriangle,
   MapPin,
   Stethoscope
 } from 'lucide-react';
@@ -27,12 +24,6 @@ export const Dashboard: React.FC = () => {
   const [highRiskMembers, setHighRiskMembers] = useState<Member[]>([]);
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
-  const [digestState, setDigestState] = useState<{ sending: boolean; message: string | null; isError: boolean }>({
-    sending: false,
-    message: null,
-    isError: false,
-  });
-
   const loadDashboardData = async () => {
     setLoading(true);
     try {
@@ -58,48 +49,6 @@ export const Dashboard: React.FC = () => {
     loadDashboardData();
   }, []);
 
-  const handleSendWeeklyDigest = async () => {
-    if (!metrics) return;
-    setDigestState({ sending: true, message: null, isError: false });
-
-    try {
-      const topFlagged = highRiskMembers.slice(0, 3).map((m) => ({
-        name: m.id,
-        code: m.memberCode,
-        score: Math.round(m.riskSummary.overallRiskScore),
-        level: m.riskSummary.riskLevel,
-        barrier: m.shapDrivers[0]?.feature || 'Elevated chronic risk',
-      }));
-
-      const res = await apiService.sendWeeklyDigestEmail({
-        to_email: currentUser?.email || 'care.management@healthfirst.org',
-        coordinator_name: currentUser?.name || 'Care Management Team',
-        total_members: metrics.totalMembers,
-        very_high_count: metrics.veryHighRiskCount,
-        high_count: metrics.highRiskCount,
-        active_interventions: metrics.activeInterventionsCount,
-        flagged_members: topFlagged,
-        portal_url: window.location.origin,
-        attach_report: true,
-      });
-
-      setDigestState({
-        sending: false,
-        message: res.message || 'Weekly cohort digest queued successfully.',
-        isError: false,
-      });
-      setTimeout(() => setDigestState((prev) => ({ ...prev, message: null })), 6000);
-    } catch (err: any) {
-      console.error('Failed to send weekly digest:', err);
-      setDigestState({
-        sending: false,
-        message: err?.response?.data?.detail || 'Failed to dispatch weekly digest notification.',
-        isError: true,
-      });
-      setTimeout(() => setDigestState((prev) => ({ ...prev, message: null })), 6000);
-    }
-  };
-
   if (loading || !metrics) {
     return (
       <div className="flex items-center justify-center min-h-[60vh]">
@@ -110,8 +59,6 @@ export const Dashboard: React.FC = () => {
       </div>
     );
   }
-
-  const isCareOrAdmin = currentUser?.role === 'care_manager' || currentUser?.role === 'payer_admin';
 
   return (
     <div className="space-y-6 max-w-7xl mx-auto pb-10">
@@ -132,17 +79,6 @@ export const Dashboard: React.FC = () => {
           </div>
 
           <div className="flex flex-wrap items-center gap-2.5">
-            {isCareOrAdmin && (
-              <button
-                onClick={handleSendWeeklyDigest}
-                disabled={digestState.sending}
-                className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-semibold transition-all disabled:opacity-50"
-              >
-                <Mail className="w-4 h-4 text-teal-400" />
-                <span>{digestState.sending ? 'Queueing Digest...' : 'Send Weekly Digest'}</span>
-              </button>
-            )}
-
             {currentUser?.role !== 'payer_viewer' && (
               <Link
                 to="/upload"
@@ -163,32 +99,6 @@ export const Dashboard: React.FC = () => {
           </div>
         </div>
       </div>
-
-      {/* Digest Notification Alert */}
-      {digestState.message && (
-        <div
-          className={`p-3.5 rounded-xl border text-xs flex items-center justify-between animate-in fade-in ${
-            digestState.isError
-              ? 'bg-rose-500/10 border-rose-500/30 text-rose-300'
-              : 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300'
-          }`}
-        >
-          <div className="flex items-center gap-2">
-            {digestState.isError ? (
-              <AlertTriangle className="w-4 h-4 text-rose-400" />
-            ) : (
-              <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-            )}
-            <span>{digestState.message}</span>
-          </div>
-          <button
-            onClick={() => setDigestState((prev) => ({ ...prev, message: null }))}
-            className="text-slate-400 hover:text-white p-1"
-          >
-            &times;
-          </button>
-        </div>
-      )}
 
       {/* ============================================================ */}
       {/* 1. RISK SUMMARY METRICS (Top Row KPI Cards)                  */}

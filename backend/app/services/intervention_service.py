@@ -274,7 +274,29 @@ def get_or_generate_recommendations(
         db.refresh(intervention)
 
         # ==================================================
-        # 9. RETURN SAVED RESULT
+        # 9. AUTOMATIC EMAIL NOTIFICATION (NON-BLOCKING)
+        #
+        # Send automated email to PAYER_VIEWER_EMAIL.
+        # Failures in email delivery will NOT break the
+        # recommendation API response.
+        # ==================================================
+
+        try:
+            from app.services.email import EmailService
+            EmailService.send_rag_intervention_email(
+                member_id=member_id,
+                risk_score=prediction.risk_score,
+                risk_category=prediction.risk_category,
+                recommendations=recommendations,
+            )
+        except Exception as email_err:
+            import logging
+            logging.getLogger("InterventionService").warning(
+                f"Automated email notification failed: {email_err}"
+            )
+
+        # ==================================================
+        # 10. RETURN SAVED RESULT
         # ==================================================
 
         return {
