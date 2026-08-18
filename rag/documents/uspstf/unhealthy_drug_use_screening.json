@@ -1,0 +1,10 @@
+{
+  "source": "USPSTF",
+  "source_type": "clinical_preventive_recommendation",
+  "title": "Unhealthy Drug Use: Screening",
+  "population": null,
+  "recommendation": "Recommendations made by the USPSTF are independent of the U.S. government. They should not be construed as an official position of the Agency for Healthcare Research and Quality or the U.S. Department of Health and Human Services. Many people in the US experience problems related to unhealthy drug use, defined in this recommendation statement as the use of illegal drugs and the nonmedical use of prescription psychoactive medications (ie, use of medications for reasons, for duration, in amounts, or with frequency other than prescribed or use by persons other than the prescribed individual). In 2018, an estimated 12% of US residents 18 years or older reported current unhealthy drug use in a national survey. 1 Unhealthy drug use is more commonly reported by young adults aged 18 to 25 years (24%) than by older adults (10%) or adolescents aged 12 to 17 years (8%). In 2018, an estimated 5.4% of pregnant persons aged 15 to 44 years reported unhealthy drug use in the last month. Adults 18 years or older (10.5%) and adolescents aged 12 to 17 years (8.0%) more commonly reported cannabis use in the last month than nonmedical use of psychotherapeutic medications, including pain relievers (2.1% and 1.3%, respectively) and opioids (1.2% and 0.7%, respectively). 1 In both age groups, less than 1% reported use of heroin, cocaine, hallucinogens, inhalants, or methamphetamines in the last month.",
+  "grade": "B",
+  "release_date": "April 1, 2020",
+  "source_url": "https://www.uspreventiveservicestaskforce.org/uspstf/recommendation/drug-use-illicit-screening"
+}
