@@ -1,0 +1,10 @@
+{
+  "source": "USPSTF",
+  "source_type": "clinical_preventive_recommendation",
+  "title": "Lung Cancer: Screening",
+  "population": null,
+  "recommendation": "Recommendations made by the USPSTF are independent of the U.S. government. They should not be construed as an official position of the Agency for Healthcare Research and Quality or the U.S. Department of Health and Human Services. Lung cancer is the second most common cancer and the leading cause of cancer death in the US. In 2020, an estimated 228,820 persons were diagnosed with lung cancer, and 135,720 persons died of the disease. 1",
+  "grade": "B",
+  "release_date": "March 9, 2021",
+  "source_url": "https://www.uspreventiveservicestaskforce.org/uspstf/recommendation/lung-cancer-screening"
+}

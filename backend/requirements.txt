@@ -1,0 +1,16 @@
+pandas
+numpy
+scikit-learn==1.6.1
+catboost==1.2.10
+lightgbm==4.6.0
+xgboost==3.2.0
+shap==0.51.0
+joblib
+sqlalchemy
+psycopg2-binary
+python-dotenv
+python-jose[cryptography]
+passlib[bcrypt]
+python-multipart
+pwdlib[argon2]
+PyJWT

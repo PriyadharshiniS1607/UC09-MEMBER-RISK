@@ -1,0 +1,31 @@
+{
+  "member_id": "M00001",
+  "risk_summary": {
+    "risk_score": 34.35608129091592,
+    "risk_category": "MEDIUM",
+    "summary": "Member M00001 is at MEDIUM risk with a risk score of 34.36, primarily driven by a diagnosis of COPD."
+  },
+  "recommendations": [
+    {
+      "priority": "high",
+      "feature": "copd",
+      "concept": "COPD management",
+      "domain": "clinical",
+      "shap_impact": 5.05892385589405,
+      "rationale": "The member has active COPD (copd = 1.0), which is the leading positive risk driver (SHAP impact +5.06). Air quality and environmental particulate matters are key environmental triggers that can exacerbate respiratory conditions.",
+      "recommended_action": "Conduct a COPD condition-management review and primary-care follow-up to assess symptom control and educate on minimizing exposure to environmental respiratory triggers.",
+      "next_step": "Care coordinator to contact the member to schedule a respiratory clinical review with their primary care clinician.",
+      "evidence_basis": "Air pollution and particulate matter such as dust and smoke circulate in the air and can cause respiratory issues that impact health.",
+      "evidence_sources": [
+        {
+          "source": "Healthy People 2030",
+          "domain": "neighborhood_built_environment",
+          "topic": "environmental_conditions",
+          "document": "environmental_conditions.json",
+          "chunk_id": "environmental_conditions.json__chunk_6",
+          "score": 0.3852860927581787
+        }
+      ]
+    }
+  ]
+}
