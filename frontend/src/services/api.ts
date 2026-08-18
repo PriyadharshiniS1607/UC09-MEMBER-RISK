@@ -1,63 +1,280 @@
 import axios from 'axios';
 import { 
   Member, 
+  BackendMember,
   Intervention, 
   PopulationMetrics, 
   User, 
   RiskLevel, 
   InterventionStatus, 
-  InterventionPriority,
-  InterventionCategory
+  InterventionPriority, 
+  InterventionCategory,
+  PredictionResponse,
+  UploadCsvResponse,
+  EmailLog,
+  ShapDriver
 } from '../types';
-import { 
-  MOCK_MEMBERS, 
-  MOCK_INTERVENTIONS, 
-  MOCK_USERS 
-} from '../mock/mockData';
 
-// Configured Axios instance ready for future backend integration
+// API Base URL from environment variable
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000';
+
+// Configured Axios instance for FastAPI backend
 export const apiClient = axios.create({
-  baseURL: import.meta.env.VITE_API_URL || 'http://localhost:8000',
-  timeout: 10000,
+  baseURL: API_BASE_URL,
+  timeout: 120000, // 2 minutes for ML ensemble scoring & SHAP TreeExplainer
   headers: {
-    'Content-Type': 'application/json',
+    'Accept': 'application/json',
   },
 });
 
-// Request interceptor for token attachment
+// Request interceptor: attach Authorization Bearer token cleanly
 apiClient.interceptors.request.use((config) => {
   const token = localStorage.getItem('care_risk_token');
-  if (token && config.headers) {
-    config.headers.Authorization = `Bearer ${token}`;
+  if (token) {
+    const cleanToken = token.startsWith('Bearer ') ? token.replace(/^Bearer\s+/i, '') : token;
+    config.headers = config.headers || {};
+    config.headers['Authorization'] = `Bearer ${cleanToken.trim()}`;
   }
   return config;
 });
 
-// Synthetic latency simulator helper
-const simulateDelay = <T>(data: T, ms: number = 250): Promise<T> => {
-  return new Promise((resolve) => setTimeout(() => resolve(data), ms));
+// Response interceptor: handle 401 token expiration cleanly
+apiClient.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (error.response && error.response.status === 401) {
+      localStorage.removeItem('care_risk_token');
+      localStorage.removeItem('care_risk_user');
+    }
+    return Promise.reject(error);
+  }
+);
+
+// Format backend role code into human-friendly label
+export const formatRoleName = (role?: string): string => {
+  switch (role?.toLowerCase()) {
+    case 'payer_admin':
+      return 'Payer Administrator';
+    case 'clinical_analyst':
+      return 'Clinical Analyst';
+    case 'care_manager':
+      return 'Care Manager';
+    case 'payer_viewer':
+      return 'Payer Viewer';
+    default:
+      return role || 'Clinical User';
+  }
 };
 
-// In-memory working state for demo interactions
-let dynamicMembers: Member[] = [...MOCK_MEMBERS];
-let dynamicInterventions: Intervention[] = [...MOCK_INTERVENTIONS];
+// Normalize risk category from backend (e.g. "VERY HIGH" -> "Very High")
+export const normalizeRiskLevel = (cat?: string): RiskLevel => {
+  const upper = (cat || '').toUpperCase().trim();
+  if (upper === 'VERY HIGH' || upper === 'VERY_HIGH') return 'Very High';
+  if (upper === 'HIGH') return 'High';
+  if (upper === 'MEDIUM' || upper === 'MODERATE') return 'Medium';
+  return 'Low';
+};
 
-export const mockApiService = {
-  // Authentication
-  async login(email: string): Promise<{ user: User; token: string }> {
-    const matchedUser = MOCK_USERS.find(u => u.email.toLowerCase() === email.toLowerCase()) || MOCK_USERS[0];
-    const token = `mock-jwt-token-${matchedUser.id}-${Date.now()}`;
+// Categorize SHAP feature name into domain group
+export const categorizeShapFeature = (feat: string): 'Health' | 'Utilization' | 'SDOH' => {
+  const f = feat.toLowerCase();
+  if (f.startsWith('ep_') || f.startsWith('rpl_') || f.includes('fips') || f.includes('access') || f.includes('pct') || f.includes('svi') || f.includes('adjprev')) {
+    return 'SDOH';
+  }
+  if (f.includes('encounter') || f.includes('ed_') || f.includes('hospital') || f.includes('medication') || f.includes('admission') || f.includes('preventive')) {
+    return 'Utilization';
+  }
+  return 'Health';
+};
+
+// Convert a backend PostgreSQL member record into frontend Member view model
+export const transformBackendMember = (bm: BackendMember): Member => {
+  const riskLevel = normalizeRiskLevel(bm.risk_category);
+  const score = typeof bm.risk_score === 'number' ? Math.round(bm.risk_score * 10) / 10 : 0.0;
+
+  // Transform SHAP drivers
+  const shapDrivers: ShapDriver[] = (bm.top_risk_drivers || []).map((d, idx) => {
+    const sVal = typeof d.shap_value === 'number' ? d.shap_value : 0.0;
+    const cat = categorizeShapFeature(d.feature);
+    const dir = d.direction || (sVal > 0 ? 'increases_risk' : sVal < 0 ? 'decreases_risk' : 'neutral');
+    const dirLabel = dir === 'increases_risk' ? 'Increases risk' : dir === 'decreases_risk' ? 'Decreases risk' : 'Neutral impact';
+
+    return {
+      rank: idx + 1,
+      feature: d.feature,
+      value: String(d.value ?? 'N/A'),
+      shapValue: Math.round(sVal * 100) / 100,
+      impact: d.impact ?? Math.abs(sVal),
+      direction: dir,
+      category: cat,
+      description: d.description || `${d.feature} impact on ensemble risk: ${dirLabel} (${sVal > 0 ? '+' : ''}${sVal.toFixed(2)})`,
+    };
+  });
+
+  // Calculate domain component scores from real data
+  const healthChronicCount = bm.chronic_condition_count ?? 0;
+  const healthComponent = Math.min(100, Math.max(10, Math.round(healthChronicCount * 18 + (bm.copd ? 15 : 0) + (bm.heart_disease ? 15 : 0) + (bm.diabetes ? 12 : 0) + (bm.cancer ? 15 : 0))));
+  
+  const edV = bm.ed_visits ?? 0;
+  const hospV = bm.hospitalizations ?? 0;
+  const medV = bm.medication_count ?? 0;
+  const utilComponent = Math.min(100, Math.max(5, Math.round(hospV * 25 + edV * 18 + medV * 4 + (bm.preventive_care_gap ?? 0) * 10)));
+  
+  const rplThemes = bm.rpl_themes ?? 0.5;
+  const sdohComponent = Math.min(100, Math.max(10, Math.round(rplThemes * 70 + (bm.ep_uninsur ?? 5) * 1.5 + (bm.ep_pov150 ?? 10) * 0.8)));
+
+  // Chronic conditions list from real binary flags
+  const chronicList = [];
+  if (bm.diabetes) chronicList.push({ name: 'Type 2 Diabetes', severity: riskLevel === 'Very High' ? 'Severe' as const : 'Moderate' as const, icd10Code: 'E11.9' });
+  if (bm.hypertension) chronicList.push({ name: 'Essential Hypertension', severity: 'Moderate' as const, icd10Code: 'I10' });
+  if (bm.heart_disease) chronicList.push({ name: 'Coronary Heart Disease', severity: 'Severe' as const, icd10Code: 'I25.1' });
+  if (bm.copd) chronicList.push({ name: 'COPD / Chronic Lower Respiratory', severity: 'Severe' as const, icd10Code: 'J44.9' });
+  if (bm.obesity) chronicList.push({ name: 'Clinical Obesity', severity: 'Moderate' as const, icd10Code: 'E66.9' });
+  if (bm.cancer) chronicList.push({ name: 'Malignant Neoplasm (Cancer History)', severity: 'Severe' as const, icd10Code: 'C80.1' });
+
+  // Recommended intervention derived from top SHAP driver
+  const topShap = shapDrivers[0];
+  const recInterventions = [
+    {
+      id: `rec-${bm.member_id}-1`,
+      title: topShap ? `Protocol for High ${topShap.feature.toUpperCase()}` : 'Proactive Clinical Care Coordination',
+      category: (topShap?.category === 'SDOH' ? 'Transportation / SDOH' : topShap?.category === 'Utilization' ? 'Clinical' : 'Preventive Care') as InterventionCategory,
+      priority: (riskLevel === 'Very High' ? 'Urgent' : riskLevel === 'High' ? 'High' : 'Medium') as InterventionPriority,
+      reason: topShap ? `Driven by ${topShap.feature} (SHAP impact: ${topShap.shapValue > 0 ? '+' : ''}${topShap.shapValue.toFixed(2)})` : 'High composite risk score assessment',
+    },
+  ];
+
+  return {
+    id: bm.member_id,
+    memberCode: bm.member_id,
+    age: bm.age ?? 0,
+    gender: bm.gender || 'Unknown',
+    stateFips: bm.state_fips || 'N/A',
+    countyFips: bm.county_fips || 'N/A',
+    chronicConditions: chronicList,
+    vitals: {
+      diabetes: Boolean(bm.diabetes),
+      hypertension: Boolean(bm.hypertension),
+      heartDisease: Boolean(bm.heart_disease),
+      copd: Boolean(bm.copd),
+      obesity: Boolean(bm.obesity),
+      cancer: Boolean(bm.cancer),
+      chronicConditionCount: bm.chronic_condition_count ?? chronicList.length,
+    },
+    riskSummary: {
+      overallRiskScore: score,
+      riskLevel,
+      hospitalAdmissionRiskPct: Math.min(100, Math.round(score * 0.85)),
+      edVisitRiskPct: Math.min(100, Math.round(score * 0.75)),
+      medicationAdherenceRiskPct: Math.min(100, Math.round(score * 0.65)),
+      lastAssessedDate: bm.prediction_date ? bm.prediction_date.split('T')[0] : (bm.created_at ? bm.created_at.split('T')[0] : new Date().toISOString().split('T')[0]),
+      trendDirection: riskLevel === 'Very High' ? 'up' : 'stable',
+      topDrivers: shapDrivers.map((d, i) => ({
+        id: `drv-${i}`,
+        factor: d.feature,
+        category: d.category === 'Health' ? 'Clinical' : d.category === 'Utilization' ? 'Utilization' : 'SDOH',
+        impactWeight: Math.abs(d.shapValue),
+        description: d.description,
+        trend: d.shapValue > 0 ? 'increasing' : 'stable',
+      })),
+    },
+    riskBreakdown: {
+      healthRiskScore: healthComponent,
+      utilizationRiskScore: utilComponent,
+      sdohRiskScore: sdohComponent,
+      combinedRiskScore: score,
+    },
+    sdohData: {
+      countyFips: bm.county_fips || 'N/A',
+      countyName: `County FIPS ${bm.county_fips || 'N/A'}`,
+      state: bm.state_fips || 'N/A',
+      sviScore: bm.rpl_themes ?? 0.5,
+      sviTier: (bm.rpl_themes ?? 0) >= 0.75 ? 'Very High' : (bm.rpl_themes ?? 0) >= 0.5 ? 'High' : 'Moderate',
+      transportationAccessScore: bm.ep_noveh ? Math.max(0, Math.round(100 - bm.ep_noveh * 4)) : 75,
+      transportationNotes: bm.ep_noveh ? `${bm.ep_noveh}% households without vehicles in county.` : 'County transportation index available.',
+      healthcareAccessScore: bm.ep_uninsur ? Math.max(0, Math.round(100 - bm.ep_uninsur * 3)) : 70,
+      healthcareAccessNotes: bm.ep_uninsur ? `${bm.ep_uninsur}% uninsured rate in county.` : 'County healthcare access metrics.',
+      foodAccessScore: bm.low_food_access_pct ? Math.max(0, Math.round(100 - bm.low_food_access_pct)) : 65,
+      foodAccessNotes: bm.low_food_access_pct ? `${bm.low_food_access_pct}% low food access rate.` : 'USDA Food Access Research Atlas index.',
+    },
+    utilizationData: {
+      totalEncounters: bm.total_encounters ?? 0,
+      hospitalizationsLast12m: bm.hospitalizations ?? 0,
+      erVisitsLast12m: bm.ed_visits ?? 0,
+      medicationCount: bm.medication_count ?? 0,
+      preventiveCareGap: bm.preventive_care_gap ?? 0,
+    },
+    shapDrivers,
+    recommendedInterventions: recInterventions,
+    activeInterventionsCount: riskLevel === 'Very High' ? 2 : riskLevel === 'High' ? 1 : 0,
+    assignedCareManager: 'Care Coordination Team',
+    rawBackendData: bm,
+  };
+};
+
+export const apiService = {
+  // ============================================================
+  // AUTHENTICATION APIs
+  // ============================================================
+
+  async login(credentials: { username: string; password: string }): Promise<{ user: User; token: string }> {
+    // 1. Clear previous session
+    localStorage.removeItem('care_risk_token');
+    localStorage.removeItem('care_risk_user');
+
+    // 2. Authenticate
+    const response = await apiClient.post('/auth/login', credentials);
+    const data = response.data;
+    const token = data.access_token;
+
+    // 3. Immediately store fresh JWT
     localStorage.setItem('care_risk_token', token);
-    localStorage.setItem('care_risk_user', JSON.stringify(matchedUser));
-    return simulateDelay({ user: matchedUser, token }, 350);
+
+    // 4. Resolve authoritative role and user identity via GET /auth/me
+    const meResponse = await apiClient.get('/auth/me', {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    });
+    const backendUser = meResponse.data;
+
+    const user: User = {
+      id: backendUser.id,
+      username: backendUser.username,
+      name: backendUser.username.replace(/_/g, ' ').replace(/\b\w/g, (l: string) => l.toUpperCase()),
+      email: backendUser.email,
+      role: backendUser.role,
+      is_active: backendUser.is_active,
+      hospitalAffiliation: 'Payer Population Health Operations',
+    };
+
+    localStorage.setItem('care_risk_user', JSON.stringify(user));
+    return { user, token };
   },
 
   async getCurrentUser(): Promise<User | null> {
-    const userStr = localStorage.getItem('care_risk_user');
-    if (!userStr) return null;
+    const token = localStorage.getItem('care_risk_token');
+    if (!token) return null;
+
     try {
-      return JSON.parse(userStr);
-    } catch {
+      const response = await apiClient.get('/auth/me');
+      const backendUser = response.data;
+      const user: User = {
+        id: backendUser.id,
+        username: backendUser.username,
+        name: backendUser.username.replace(/_/g, ' ').replace(/\b\w/g, (l: string) => l.toUpperCase()),
+        email: backendUser.email,
+        role: backendUser.role,
+        is_active: backendUser.is_active,
+        hospitalAffiliation: 'Payer Population Health Operations',
+      };
+      localStorage.setItem('care_risk_user', JSON.stringify(user));
+      return user;
+    } catch (err: any) {
+      if (err?.response?.status === 401 || err?.response?.status === 403) {
+        localStorage.removeItem('care_risk_token');
+        localStorage.removeItem('care_risk_user');
+      }
       return null;
     }
   },
@@ -65,24 +282,106 @@ export const mockApiService = {
   logout(): void {
     localStorage.removeItem('care_risk_token');
     localStorage.removeItem('care_risk_user');
+    sessionStorage.clear();
   },
 
-  // Population Analytics - Dynamic metrics calculation from existing mock data
-  async getPopulationMetrics(): Promise<PopulationMetrics> {
-    const total = dynamicMembers.length;
-    const vHigh = dynamicMembers.filter(m => m.riskSummary.riskLevel === 'Very High').length;
-    const high = dynamicMembers.filter(m => m.riskSummary.riskLevel === 'High').length;
-    const med = dynamicMembers.filter(m => m.riskSummary.riskLevel === 'Medium').length;
-    const low = dynamicMembers.filter(m => m.riskSummary.riskLevel === 'Low').length;
+  async register(data: { username: string; email: string; password: string; confirm_password: string }): Promise<any> {
+    const response = await apiClient.post('/auth/register', data);
+    return response.data;
+  },
 
-    const totalScoreSum = dynamicMembers.reduce((acc, m) => acc + m.riskSummary.overallRiskScore, 0);
+  async getUsers(): Promise<any[]> {
+    const response = await apiClient.get('/auth/users');
+    return response.data.users || [];
+  },
+
+  async updateUserRole(userId: number, role: string): Promise<any> {
+    const response = await apiClient.patch(`/auth/users/${userId}/role`, { role });
+    return response.data;
+  },
+
+  // ============================================================
+  // MEMBER RETRIEVAL FROM POSTGRESQL (GET /members)
+  // ============================================================
+
+  async getMembers(params?: {
+    riskCategory?: string;
+    search?: string;
+    countyFips?: string;
+    sortBy?: string;
+  }): Promise<Member[]> {
+    const response = await apiClient.get('/members/');
+    const rawMembers: BackendMember[] = response.data.members || [];
+    let members = rawMembers.map(transformBackendMember);
+
+    // Apply client-side filters if requested
+    if (params?.riskCategory && params.riskCategory !== 'All') {
+      members = members.filter(m => m.riskSummary.riskLevel.toLowerCase() === params.riskCategory?.toLowerCase());
+    }
+
+    if (params?.countyFips && params.countyFips !== 'All') {
+      members = members.filter(m => m.countyFips === params.countyFips);
+    }
+
+    if (params?.search && params.search.trim()) {
+      const q = params.search.trim().toLowerCase();
+      members = members.filter(m => 
+        m.id.toLowerCase().includes(q) ||
+        m.countyFips.toLowerCase().includes(q) ||
+        m.stateFips.toLowerCase().includes(q)
+      );
+    }
+
+    if (params?.sortBy === 'riskScore_desc') {
+      members.sort((a, b) => b.riskSummary.overallRiskScore - a.riskSummary.overallRiskScore);
+    } else if (params?.sortBy === 'riskScore_asc') {
+      members.sort((a, b) => a.riskSummary.overallRiskScore - b.riskSummary.overallRiskScore);
+    } else if (params?.sortBy === 'age_desc') {
+      members.sort((a, b) => b.age - a.age);
+    }
+
+    return members;
+  },
+
+  async getMemberById(memberId: string): Promise<Member | null> {
+    try {
+      const response = await apiClient.get(`/members/${memberId}`);
+      const rawMember: BackendMember = response.data.member;
+      if (!rawMember) return null;
+      return transformBackendMember(rawMember);
+    } catch (err: any) {
+      if (err?.response?.status === 404) {
+        return null;
+      }
+      throw err;
+    }
+  },
+
+  // ============================================================
+  // POPULATION METRICS FROM REAL POSTGRESQL COHORT
+  // ============================================================
+
+  async getPopulationMetrics(): Promise<PopulationMetrics> {
+    const members = await this.getMembers();
+    const total = members.length;
+    const vHigh = members.filter(m => m.riskSummary.riskLevel === 'Very High').length;
+    const high = members.filter(m => m.riskSummary.riskLevel === 'High').length;
+    const med = members.filter(m => m.riskSummary.riskLevel === 'Medium').length;
+    const low = members.filter(m => m.riskSummary.riskLevel === 'Low').length;
+
+    const totalScoreSum = members.reduce((acc, m) => acc + m.riskSummary.overallRiskScore, 0);
     const avgScore = total > 0 ? Math.round((totalScoreSum / total) * 10) / 10 : 0;
 
-    const activeCount = dynamicInterventions.filter(i => i.status === 'In Progress').length;
-    const pendingCount = dynamicInterventions.filter(i => i.status === 'Pending').length;
-    const completedCount = dynamicInterventions.filter(i => i.status === 'Completed').length;
+    const healthAvg = total > 0 ? Math.round(members.reduce((acc, m) => acc + m.riskBreakdown.healthRiskScore, 0) / total) : 0;
+    const utilAvg = total > 0 ? Math.round(members.reduce((acc, m) => acc + m.riskBreakdown.utilizationRiskScore, 0) / total) : 0;
+    const sdohAvg = total > 0 ? Math.round(members.reduce((acc, m) => acc + m.riskBreakdown.sdohRiskScore, 0) / total) : 0;
 
-    const metrics: PopulationMetrics = {
+    const interventions = await this.getInterventions();
+    const activeCount = interventions.filter(i => i.status === 'In Progress').length;
+    const pendingCount = interventions.filter(i => i.status === 'Pending').length;
+    const completedCount = interventions.filter(i => i.status === 'Completed').length;
+
+    return {
       totalMembers: total,
       veryHighRiskCount: vHigh,
       veryHighRiskPercentage: total > 0 ? Math.round((vHigh / total) * 1000) / 10 : 0,
@@ -96,242 +395,190 @@ export const mockApiService = {
       pendingInterventionsCount: pendingCount,
       completedInterventionsCount: completedCount,
       averageRiskScore: avgScore,
-      projectedReadmissionReductionPct: 18.5,
+      healthAverageScore: healthAvg,
+      utilizationAverageScore: utilAvg,
+      sdohAverageScore: sdohAvg,
     };
-
-    return simulateDelay(metrics, 200);
   },
 
-  // Members Retrieval with Filters, Search, and Sorting
-  async getMembers(params?: {
-    search?: string;
-    riskLevel?: RiskLevel | 'All';
-    sdohTier?: string;
-    condition?: string;
-    sortBy?: string;
-  }): Promise<Member[]> {
-    let result = [...dynamicMembers];
+  // ============================================================
+  // PREDICTION API (POST /predict/)
+  // ============================================================
 
-    if (params?.search) {
-      const q = params.search.toLowerCase().trim();
-      result = result.filter(
-        (m) =>
-          m.firstName.toLowerCase().includes(q) ||
-          m.lastName.toLowerCase().includes(q) ||
-          m.memberCode.toLowerCase().includes(q) ||
-          m.primaryCarePhysician.toLowerCase().includes(q) ||
-          m.sdohData.countyName.toLowerCase().includes(q) ||
-          m.sdohData.countyFips.includes(q)
-      );
+  async uploadMemberCsv(file: File): Promise<UploadCsvResponse> {
+    if (!file || file.size === 0) {
+      throw new Error('The selected CSV file is empty (0 bytes). Please select a valid population dataset.');
     }
 
-    if (params?.riskLevel && params.riskLevel !== 'All') {
-      result = result.filter((m) => m.riskSummary.riskLevel === params.riskLevel);
+    if (!file.name.toLowerCase().endsWith('.csv')) {
+      throw new Error(`Unsupported file format: "${file.name}". Only standard comma-separated (.csv) files are permitted.`);
     }
 
-    if (params?.sdohTier && params.sdohTier !== 'All') {
-      result = result.filter((m) => m.sdohData.sviTier === params.sdohTier);
-    }
+    const formData = new FormData();
+    formData.append('file', file);
 
-    if (params?.condition && params.condition !== 'All') {
-      result = result.filter((m) =>
-        m.chronicConditions.some((c) =>
-          c.name.toLowerCase().includes((params.condition || '').toLowerCase())
-        )
-      );
-    }
+    const response = await apiClient.post<PredictionResponse>('/predict/', formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+    });
 
-    if (params?.sortBy) {
-      switch (params.sortBy) {
-        case 'riskScore_desc':
-          result.sort((a, b) => b.riskSummary.overallRiskScore - a.riskSummary.overallRiskScore);
-          break;
-        case 'riskScore_asc':
-          result.sort((a, b) => a.riskSummary.overallRiskScore - b.riskSummary.overallRiskScore);
-          break;
-        case 'name_asc':
-          result.sort((a, b) => a.lastName.localeCompare(b.lastName));
-          break;
-        case 'healthRisk_desc':
-          result.sort((a, b) => b.riskBreakdown.healthRiskScore - a.riskBreakdown.healthRiskScore);
-          break;
-        case 'utilizationRisk_desc':
-          result.sort((a, b) => b.riskBreakdown.utilizationRiskScore - a.riskBreakdown.utilizationRiskScore);
-          break;
-        case 'sdohRisk_desc':
-          result.sort((a, b) => b.riskBreakdown.sdohRiskScore - a.riskBreakdown.sdohRiskScore);
-          break;
-        default:
-          break;
-      }
-    } else {
-      // Default sort by risk score descending
-      result.sort((a, b) => b.riskSummary.overallRiskScore - a.riskSummary.overallRiskScore);
-    }
+    const result = response.data;
+    const predictions = result.predictions || [];
 
-    return simulateDelay(result, 250);
+    return {
+      success: true,
+      message: result.message || 'Dataset successfully processed and saved.',
+      filename: file.name,
+      fileSizeBytes: file.size,
+      recordsCount: result.total_members || predictions.length,
+      uploadedAt: new Date().toISOString(),
+      batchId: `BATCH-UC09-${Date.now().toString(36).toUpperCase()}`,
+      status: 'Completed',
+      processingNote: `Successfully executed 3-Model Stacking Ensemble & SHAP attribution for ${result.total_members || predictions.length} members.`,
+      predictions,
+    };
   },
 
-  async getMemberById(id: string): Promise<Member | undefined> {
-    const member = dynamicMembers.find((m) => m.id === id);
-    return simulateDelay(member, 200);
-  },
+  // ============================================================
+  // INTERVENTIONS WORKFLOW (Decoupled from backend CRUD - Module handled separately)
+  // ============================================================
 
-  // Future Backend API Simulation: GET /members/{member_id}/explanation
-  async getMemberExplanation(memberId: string): Promise<{
-    member_id: string;
-    risk_score: number;
-    risk_category: RiskLevel;
-    risk_drivers: {
-      feature: string;
-      value: string | number;
-      shap_value: number;
-      rank: number;
-      category?: string;
-      description?: string;
-    }[];
-  } | undefined> {
-    const member = dynamicMembers.find((m) => m.id === memberId);
-    if (!member) return undefined;
-
-    const drivers = member.shapDrivers.map((d) => ({
-      feature: d.feature,
-      value: d.value,
-      shap_value: d.shapValue,
-      rank: d.rank,
-      category: d.category,
-      description: d.description,
-    }));
-
-    return simulateDelay({
-      member_id: member.id,
-      risk_score: member.riskSummary.overallRiskScore,
-      risk_category: member.riskSummary.riskLevel,
-      risk_drivers: drivers,
-    }, 200);
-  },
-
-  // Interventions
-  async getInterventions(params?: {
+  async getInterventions(filters?: {
     status?: InterventionStatus | 'All';
     priority?: InterventionPriority | 'All';
     category?: InterventionCategory | 'All';
     memberId?: string;
   }): Promise<Intervention[]> {
-    let result = [...dynamicInterventions];
-
-    if (params?.memberId) {
-      result = result.filter((i) => i.memberId === params.memberId);
+    let list: Intervention[] = [];
+    try {
+      const stored = localStorage.getItem('care_risk_interventions_local');
+      if (stored) {
+        list = JSON.parse(stored);
+      }
+    } catch {
+      list = [];
     }
 
-    if (params?.status && params.status !== 'All') {
-      result = result.filter((i) => i.status === params.status);
+    if (filters?.memberId) {
+      list = list.filter(i => i.memberId === filters.memberId || i.memberCode === filters.memberId);
     }
-
-    if (params?.priority && params.priority !== 'All') {
-      result = result.filter((i) => i.priority === params.priority);
+    if (filters?.status && filters.status !== 'All') {
+      list = list.filter(i => i.status === filters.status);
     }
-
-    if (params?.category && params.category !== 'All') {
-      result = result.filter((i) => i.type === params.category);
+    if (filters?.priority && filters.priority !== 'All') {
+      list = list.filter(i => i.priority === filters.priority);
     }
-
-    return simulateDelay(result, 250);
+    if (filters?.category && filters.category !== 'All') {
+      list = list.filter(i => i.type === filters.category);
+    }
+    return list;
   },
 
-  async createIntervention(newIntervention: Omit<Intervention, 'id' | 'createdDate'>): Promise<Intervention> {
-    const created: Intervention = {
-      ...newIntervention,
-      id: `int-${Date.now()}`,
+  async createIntervention(data: Omit<Intervention, 'id' | 'createdDate'>): Promise<Intervention> {
+    const newItem: Intervention = {
+      id: `INTV-${Date.now().toString().slice(-6)}`,
+      ...data,
       createdDate: new Date().toISOString().split('T')[0],
     };
-    dynamicInterventions = [created, ...dynamicInterventions];
-    
-    // Update member active intervention count
-    dynamicMembers = dynamicMembers.map(m => {
-      if (m.id === created.memberId) {
-        return {
-          ...m,
-          activeInterventionsCount: m.activeInterventionsCount + 1,
-        };
-      }
-      return m;
-    });
 
-    return simulateDelay(created, 300);
+    try {
+      const stored = localStorage.getItem('care_risk_interventions_local');
+      const list: Intervention[] = stored ? JSON.parse(stored) : [];
+      list.unshift(newItem);
+      localStorage.setItem('care_risk_interventions_local', JSON.stringify(list));
+    } catch (e) {
+      console.warn('Could not save intervention locally:', e);
+    }
+
+    return newItem;
   },
 
   async updateInterventionStatus(id: string, status: InterventionStatus): Promise<Intervention | null> {
-    let updatedItem: Intervention | null = null;
-    dynamicInterventions = dynamicInterventions.map((item) => {
-      if (item.id === id) {
-        updatedItem = {
-          ...item,
-          status,
-          completedDate: status === 'Completed' ? new Date().toISOString().split('T')[0] : item.completedDate,
-        };
-        return updatedItem;
+    try {
+      const stored = localStorage.getItem('care_risk_interventions_local');
+      if (!stored) return null;
+      const list: Intervention[] = JSON.parse(stored);
+      const item = list.find(i => i.id === id);
+      if (item) {
+        item.status = status;
+        if (status === 'Completed') {
+          item.completedDate = new Date().toISOString().split('T')[0];
+        }
+        localStorage.setItem('care_risk_interventions_local', JSON.stringify(list));
+        return item;
       }
-      return item;
-    });
-
-    return simulateDelay(updatedItem, 200);
+    } catch (e) {
+      console.warn('Could not update intervention status locally:', e);
+    }
+    return null;
   },
 
-  // CSV Data Ingestion Service (Simulating POST /upload)
-  async uploadMemberCsv(
-    file: File, 
-    options?: { simulateError?: boolean }
-  ): Promise<import('../types').UploadCsvResponse> {
-    // 1. Validation: Ensure file exists and is not empty
-    if (!file || file.size === 0) {
-      throw new Error('The selected CSV file is empty (0 bytes). Please select a valid population dataset.');
-    }
+  // ============================================================
+  // EMAIL NOTIFICATION APIs
+  // ============================================================
 
-    // 2. Validation: File extension must be .csv
-    if (!file.name.toLowerCase().endsWith('.csv')) {
-      throw new Error(`Unsupported file type: "${file.name}". Please upload a standard comma-separated (.csv) file.`);
-    }
+  async sendTestEmail(toEmail: string, subject?: string, body?: string): Promise<any> {
+    const response = await apiClient.post('/api/email/test', {
+      to_email: toEmail,
+      subject: subject || 'Test Notification Connection',
+      body: body || 'Test email from UC09 Member Risk System.',
+    });
+    return response.data;
+  },
 
-    // 3. Optional simulated failure for testing failure states
-    if (options?.simulateError) {
-      await simulateDelay(null, 600);
-      throw new Error('Simulated Ingestion Error: Schema validation failed. Column "member_id" or "demographics" was missing or corrupted.');
-    }
+  async sendRiskAlertEmail(payload: {
+    to_email: string;
+    provider_name: string;
+    member_id: string;
+    member_name: string;
+    member_code: string;
+    age: number;
+    gender: string;
+    risk_level: string;
+    overall_score: number;
+    shap_drivers: { feature: string; value: any; shap_value: number; description?: string }[];
+    portal_url?: string;
+  }): Promise<any> {
+    const response = await apiClient.post('/api/email/alert/risk', payload);
+    return response.data;
+  },
 
-    // 4. Inspect headers & row count (Metadata extraction only - NO risk calculation or ML preprocessing)
-    let headers: string[] = [];
-    let lineCount = 0;
+  async sendInterventionEmail(payload: {
+    to_email: string;
+    coordinator_name: string;
+    member_name: string;
+    member_code: string;
+    intervention_title: string;
+    category: string;
+    due_date: string;
+    priority: string;
+    description: string;
+    portal_url?: string;
+  }): Promise<any> {
+    const response = await apiClient.post('/api/email/alert/intervention', payload);
+    return response.data;
+  },
 
-    try {
-      const text = await file.text();
-      const lines = text.split(/\r?\n/).filter(line => line.trim().length > 0);
-      lineCount = Math.max(0, lines.length - 1); // Exclude header row
-      if (lines.length > 0) {
-        headers = lines[0].split(',').map(h => h.trim().replace(/^["']|["']$/g, '')).filter(Boolean);
-      }
-    } catch {
-      lineCount = 150; // Fallback mock estimate if text reading is blocked
-      headers = ['member_id', 'age', 'gender', 'systolic_bp', 'hba1c', 'chronic_conditions', 'admissions_l12m'];
-    }
+  async sendWeeklyDigestEmail(payload: {
+    to_email: string;
+    coordinator_name: string;
+    total_members: number;
+    very_high_count: number;
+    high_count: number;
+    active_interventions: number;
+    flagged_members: { name: string; code: string; score: number; level: string; barrier: string }[];
+    portal_url?: string;
+    attach_report?: boolean;
+  }): Promise<any> {
+    const response = await apiClient.post('/api/email/digest', payload);
+    return response.data;
+  },
 
-    if (headers.length === 0) {
-      headers = ['member_id', 'age', 'gender', 'systolic_bp', 'hba1c', 'chronic_conditions'];
-    }
-
-    const response: import('../types').UploadCsvResponse = {
-      success: true,
-      message: 'Member cohort CSV successfully ingested and queued for backend risk scoring.',
-      filename: file.name,
-      fileSizeBytes: file.size,
-      recordsCount: lineCount > 0 ? lineCount : 120,
-      uploadedAt: new Date().toISOString(),
-      batchId: `BATCH-UC09-${Date.now().toString(36).toUpperCase()}`,
-      detectedHeaders: headers.slice(0, 10),
-      status: 'Ready for Model Scoring',
-      processingNote: 'File buffered in memory. Backend FastAPI ML prediction pipeline will calculate risk indices in Phase 2.',
-    };
-
-    return simulateDelay(response, 1000);
+  async getEmailSentLogs(): Promise<EmailLog[]> {
+    const response = await apiClient.get('/api/email/sent-logs');
+    return response.data || [];
   },
 };
+
+export const mockApiService = apiService;

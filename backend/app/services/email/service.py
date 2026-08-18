@@ -2,7 +2,7 @@ import os
 import smtplib
 import json
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.mime.base import MIMEBase
@@ -12,12 +12,54 @@ from jinja2 import Template
 
 from .config import settings
 from . import templates as email_templates
+from app.database.connection import SessionLocal
+from app.database.models import EmailNotification, Member
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("EmailService")
 
 class EmailService:
+    @staticmethod
+    def _record_in_db(
+        recipient_email: str,
+        subject: str,
+        notification_type: str,
+        member_id_str: Optional[str] = None,
+        status: str = "SENT",
+        error_message: Optional[str] = None,
+    ):
+        """Helper to persist notification audit events to PostgreSQL email_notifications table."""
+        try:
+            db = SessionLocal()
+            resolved_member_db_id = None
+            if member_id_str:
+                member = (
+                    db.query(Member)
+                    .filter(
+                        (Member.member_id == member_id_str)
+                        | (Member.id == int(member_id_str) if str(member_id_str).isdigit() else False)
+                    )
+                    .first()
+                )
+                if member:
+                    resolved_member_db_id = member.id
+
+            notif = EmailNotification(
+                member_id=resolved_member_db_id,
+                recipient_email=recipient_email,
+                subject=subject,
+                notification_type=notification_type,
+                status=status,
+                error_message=error_message,
+                sent_at=datetime.now(timezone.utc),
+                created_at=datetime.now(timezone.utc),
+            )
+            db.add(notif)
+            db.commit()
+            db.close()
+        except Exception as e:
+            logger.warning(f"Could not persist EmailNotification to PostgreSQL: {e}")
     @staticmethod
     def _create_message(
         to_email: str,
@@ -224,7 +266,15 @@ Attachments: {[a.get('filename') for a in attachments] if attachments else 'None
         text_content = text_tmpl.render(**context)
         
         subject = f"Clinical Risk Alert: {risk_level} Risk patient ({member_name})"
-        return cls.send_email(to_email, subject, html_content, text_content)
+        res = cls.send_email(to_email, subject, html_content, text_content)
+        cls._record_in_db(
+            recipient_email=to_email,
+            subject=subject,
+            notification_type="Clinical Risk Alert",
+            member_id_str=member_id or member_code,
+            status="SENT",
+        )
+        return res
 
     @classmethod
     def send_intervention_reminder(
@@ -261,7 +311,15 @@ Attachments: {[a.get('filename') for a in attachments] if attachments else 'None
         text_content = text_tmpl.render(**context)
         
         subject = f"Care Intervention Action Required: {member_name} ({priority})"
-        return cls.send_email(to_email, subject, html_content, text_content)
+        res = cls.send_email(to_email, subject, html_content, text_content)
+        cls._record_in_db(
+            recipient_email=to_email,
+            subject=subject,
+            notification_type="Intervention Reminder",
+            member_id_str=member_code or member_name,
+            status="SENT",
+        )
+        return res
 
     @classmethod
     def send_weekly_cohort_digest(
@@ -295,4 +353,12 @@ Attachments: {[a.get('filename') for a in attachments] if attachments else 'None
         text_content = text_tmpl.render(**context)
         
         subject = f"Member Risk Panel Weekly Cohort Summary Digest"
-        return cls.send_email(to_email, subject, html_content, text_content, attachments)
+        res = cls.send_email(to_email, subject, html_content, text_content, attachments)
+        cls._record_in_db(
+            recipient_email=to_email,
+            subject=subject,
+            notification_type="Weekly Digest",
+            member_id_str=None,
+            status="SENT",
+        )
+        return res

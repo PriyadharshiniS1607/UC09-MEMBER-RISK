@@ -5,6 +5,7 @@ from app.api.auth import router as auth_router
 from app.services.email import email_router
 from app.api.member import router as member_router
 from app.api.prediction import router as prediction_router
+
 app = FastAPI(
     title="Member Risk Analytics Backend",
     description=(
@@ -22,13 +23,12 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-#MemberAPIs
+# Member APIs
 app.include_router(member_router)
-#Prediction APIs
+# Prediction APIs
 app.include_router(prediction_router)
 # Authentication APIs
 app.include_router(auth_router)
-
 # Email notification APIs
 app.include_router(email_router)
 
