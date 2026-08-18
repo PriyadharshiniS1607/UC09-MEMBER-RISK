@@ -1,0 +1,9 @@
+langchain
+langchain-core
+langchain-text-splitters
+langchain-community
+sentence-transformers
+faiss-cpu
+openai
+python-dotenv
+google-genai

@@ -1,0 +1,10 @@
+{
+  "source": "USPSTF",
+  "source_type": "clinical_preventive_recommendation",
+  "title": "Hypertension in Adults: Screening",
+  "population": null,
+  "recommendation": "Recommendations made by the USPSTF are independent of the U.S. government. They should not be construed as an official position of the Agency for Healthcare Research and Quality or the U.S. Department of Health and Human Services. Hypertension is a prevalent condition, affects approximately 45% of the adult US population, 1 and is the most commonly diagnosed condition at outpatient office visits. Hypertension is a major contributing risk factor for heart failure, myocardial infarction, stroke, and chronic kidney disease.",
+  "grade": "A",
+  "release_date": "April 27, 2021",
+  "source_url": "https://www.uspreventiveservicestaskforce.org/uspstf/recommendation/hypertension-in-adults-screening"
+}
