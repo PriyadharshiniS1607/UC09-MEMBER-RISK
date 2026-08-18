@@ -304,3 +304,50 @@ export interface EmailLog {
   status: string;
   file_path?: string;
 }
+
+// ============================================================
+// RAG RECOMMENDATION TYPES
+// ============================================================
+
+export interface RagEvidenceSource {
+  source: string;
+  domain?: string;
+  topic?: string;
+  document?: string;
+  chunk_id: string;
+  score?: number;
+}
+
+export interface RagRecommendation {
+  priority?: 'high' | 'medium' | 'low' | string;
+  feature?: string;
+  concept?: string;
+  domain?: string;
+  shap_impact?: number;
+  rationale?: string;
+  recommended_action?: string;
+  next_step?: string;
+  evidence_basis?: string;
+  evidence_sources?: RagEvidenceSource[];
+  // Support alternative legacy keys
+  title?: string;
+  category?: string;
+  description?: string;
+  action_required?: string;
+  due_date?: string;
+}
+
+export interface RagRecommendationResponse {
+  member_id: string;
+  risk_summary?: {
+    risk_score?: number;
+    risk_category?: string;
+    summary?: string;
+  };
+  recommendations: RagRecommendation[];
+  source?: string;
+  status?: string;
+  intervention_id?: number;
+  prediction_id?: number;
+  created_at?: string;
+}

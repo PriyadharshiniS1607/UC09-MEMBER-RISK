@@ -12,7 +12,8 @@ import {
   PredictionResponse,
   UploadCsvResponse,
   EmailLog,
-  ShapDriver
+  ShapDriver,
+  RagRecommendationResponse
 } from '../types';
 
 // API Base URL from environment variable
@@ -512,6 +513,16 @@ export const apiService = {
       console.warn('Could not update intervention status locally:', e);
     }
     return null;
+  },
+
+  // ============================================================
+  // RAG INTERVENTION RECOMMENDATIONS (GET /recommendations/{member_id})
+  // ============================================================
+
+  async getMemberRecommendations(memberId: string): Promise<RagRecommendationResponse> {
+    const cleanId = String(memberId).trim();
+    const response = await apiClient.get(`/recommendations/${encodeURIComponent(cleanId)}`);
+    return response.data;
   },
 
   // ============================================================

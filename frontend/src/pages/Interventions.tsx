@@ -1,468 +1,193 @@
 import React, { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { 
-  Filter, 
-  Plus, 
-  CheckCircle2, 
-  PlayCircle, 
-  Activity, 
-  Calendar, 
-  ArrowRight,
-  Flame,
-  CheckCircle,
-  AlertCircle
+  Sparkles, 
+  Users, 
+  RefreshCw, 
+  AlertCircle, 
+  ArrowRight, 
+  Activity,
+  MapPin,
+  HeartPulse
 } from 'lucide-react';
-import { mockApiService } from '../services/api';
-import { Intervention, InterventionStatus, InterventionPriority, InterventionCategory, Member } from '../types';
+import { apiService } from '../services/api';
+import { Member } from '../types';
 import { RiskBadge } from '../components/common/RiskBadge';
-import { StatusBadge } from '../components/common/StatusBadge';
-import { Modal } from '../components/common/Modal';
+import { RagRecommendationPanel } from '../components/common/RagRecommendationPanel';
 
 export const Interventions: React.FC = () => {
-  const [interventions, setInterventions] = useState<Intervention[]>([]);
+  const [searchParams, setSearchParams] = useSearchParams();
   const [members, setMembers] = useState<Member[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loadingMembers, setLoadingMembers] = useState<boolean>(true);
+  const [membersError, setMembersError] = useState<string | null>(null);
 
-  // Filters
-  const [statusFilter, setStatusFilter] = useState<InterventionStatus | 'All'>('All');
-  const [priorityFilter, setPriorityFilter] = useState<InterventionPriority | 'All'>('All');
-  const [categoryFilter, setCategoryFilter] = useState<InterventionCategory | 'All'>('All');
+  const queryMemberId = searchParams.get('memberId');
+  const [selectedMemberId, setSelectedMemberId] = useState<string>(queryMemberId || '');
 
-  // Modal State
-  const [isModalOpen, setIsModalOpen] = useState(false);
-  const [selectedMemberId, setSelectedMemberId] = useState('');
-  const [newTitle, setNewTitle] = useState('');
-  const [newType, setNewType] = useState<InterventionCategory>('Clinical');
-  const [newPriority, setNewPriority] = useState<InterventionPriority>('High');
-  const [newDueDate, setNewDueDate] = useState('2026-08-25');
-  const [newDescription, setNewDescription] = useState('');
-  const [newAction, setNewAction] = useState('');
-  const [submitting, setSubmitting] = useState(false);
+  const fetchMembersList = async () => {
+    setLoadingMembers(true);
+    setMembersError(null);
+    try {
+      const data = await apiService.getMembers();
+      setMembers(data);
+
+      // Resolve selected member ID dynamically
+      if (queryMemberId && data.some((m) => m.id === queryMemberId)) {
+        setSelectedMemberId(queryMemberId);
+      } else if (data.length > 0) {
+        // Fallback to first member in the cohort
+        const defaultId = data[0].id;
+        setSelectedMemberId(defaultId);
+        setSearchParams({ memberId: defaultId }, { replace: true });
+      }
+    } catch (err: any) {
+      console.error('Failed to load member cohort for interventions:', err);
+      setMembersError('Failed to load member registry. Please refresh.');
+    } finally {
+      setLoadingMembers(false);
+    }
+  };
 
   useEffect(() => {
-    const fetchData = async () => {
-      setLoading(true);
-      try {
-        const [intvData, membersData] = await Promise.all([
-          mockApiService.getInterventions({
-            status: statusFilter,
-            priority: priorityFilter,
-            category: categoryFilter,
-          }),
-          mockApiService.getMembers(),
-        ]);
-        setInterventions(intvData);
-        setMembers(membersData);
-        if (membersData.length > 0 && !selectedMemberId) {
-          setSelectedMemberId(membersData[0].id);
-        }
-      } catch (err) {
-        console.error('Error loading interventions:', err);
-      } finally {
-        setLoading(false);
-      }
-    };
+    fetchMembersList();
+  }, []);
 
-    fetchData();
-  }, [statusFilter, priorityFilter, categoryFilter]);
-
-  const handleUpdateStatus = async (id: string, newStatus: InterventionStatus) => {
-    try {
-      const updated = await mockApiService.updateInterventionStatus(id, newStatus);
-      if (updated) {
-        setInterventions((prev) =>
-          prev.map((item) => (item.id === id ? updated : item))
-        );
-      }
-    } catch (err) {
-      console.error('Error updating status:', err);
+  // Sync state if URL query param changes from external navigation
+  useEffect(() => {
+    if (queryMemberId && queryMemberId !== selectedMemberId) {
+      setSelectedMemberId(queryMemberId);
     }
+  }, [queryMemberId]);
+
+  const handleMemberChange = (newMemberId: string) => {
+    setSelectedMemberId(newMemberId);
+    setSearchParams({ memberId: newMemberId });
   };
 
-  const handleCreateIntervention = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const targetMember = members.find((m) => m.id === selectedMemberId);
-    if (!targetMember) return;
-
-    setSubmitting(true);
-    try {
-      const created = await mockApiService.createIntervention({
-        memberId: targetMember.id,
-        memberName: `${targetMember.firstName} ${targetMember.lastName}`,
-        memberCode: targetMember.memberCode,
-        memberRiskLevel: targetMember.riskSummary.riskLevel,
-        title: newTitle,
-        type: newType,
-        priority: newPriority,
-        status: 'In Progress',
-        assignedTo: targetMember.assignedCareManager,
-        dueDate: newDueDate,
-        description: newDescription,
-        actionRequired: newAction,
-      });
-
-      setInterventions([created, ...interventions]);
-      setIsModalOpen(false);
-
-      // Reset form
-      setNewTitle('');
-      setNewDescription('');
-      setNewAction('');
-    } catch (err) {
-      console.error('Error dispatching intervention:', err);
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  const urgentCount = interventions.filter((i) => i.priority === 'Urgent' || i.priority === 'High').length;
-  const inProgressCount = interventions.filter((i) => i.status === 'In Progress').length;
-  const completedCount = interventions.filter((i) => i.status === 'Completed').length;
+  const selectedMember = members.find((m) => m.id === selectedMemberId) || null;
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 max-w-7xl mx-auto">
       {/* Page Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <div className="flex items-center gap-2">
-            <h1 className="text-2xl font-extrabold text-white tracking-tight">Clinical & SDOH Intervention Hub</h1>
-            <span className="px-2.5 py-0.5 rounded-full bg-slate-800 border border-slate-700 text-teal-400 font-mono text-xs font-bold">
-              {interventions.length} Tasks
-            </span>
+          <div className="flex items-center gap-2.5">
+            <div className="p-2 rounded-xl bg-teal-500/10 border border-teal-500/30 text-teal-400">
+              <Sparkles className="w-5 h-5" />
+            </div>
+            <div>
+              <h1 className="text-2xl lg:text-3xl font-extrabold text-white tracking-tight">
+                Clinical &amp; SDOH Intervention Hub
+              </h1>
+              <span className="text-xs text-teal-400 font-mono">
+                RAG Evidence-Grounded Recommendations
+              </span>
+            </div>
           </div>
-          <p className="text-xs text-slate-400 mt-1">
-            Orchestrate multidisciplinary protocols spanning Clinical, Preventive Care, Transportation, Food Access, and Healthcare Access.
+          <p className="text-xs lg:text-sm text-slate-400 mt-2">
+            Synthesize evidence-grounded care recommendations formulated from FAISS medical guidelines, SDOH indicators, and Gemini clinical reasoning.
           </p>
         </div>
 
-        <button
-          onClick={() => setIsModalOpen(true)}
-          className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-teal-500 hover:bg-teal-400 text-slate-950 text-xs font-bold transition-all shadow-lg shadow-teal-500/20 shrink-0"
-        >
-          <Plus className="w-4 h-4" />
-          <span>New Intervention</span>
-        </button>
-      </div>
-
-      {/* KPI Highlights Bar */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <div className="bg-slate-900/80 border border-rose-500/20 rounded-xl p-4 flex items-center justify-between">
-          <div>
-            <p className="text-[11px] font-semibold text-rose-300 uppercase tracking-wider">Urgent / High Priority</p>
-            <p className="text-2xl font-bold text-white font-mono mt-0.5">{urgentCount}</p>
-          </div>
-          <div className="p-2.5 rounded-lg bg-rose-500/10 text-rose-400">
-            <Flame className="w-5 h-5" />
-          </div>
-        </div>
-
-        <div className="bg-slate-900/80 border border-sky-500/20 rounded-xl p-4 flex items-center justify-between">
-          <div>
-            <p className="text-[11px] font-semibold text-sky-300 uppercase tracking-wider">In Active Outreach</p>
-            <p className="text-2xl font-bold text-white font-mono mt-0.5">{inProgressCount}</p>
-          </div>
-          <div className="p-2.5 rounded-lg bg-sky-500/10 text-sky-400">
-            <PlayCircle className="w-5 h-5" />
-          </div>
-        </div>
-
-        <div className="bg-slate-900/80 border border-emerald-500/20 rounded-xl p-4 flex items-center justify-between">
-          <div>
-            <p className="text-[11px] font-semibold text-emerald-300 uppercase tracking-wider">Completed Actions</p>
-            <p className="text-2xl font-bold text-white font-mono mt-0.5">{completedCount}</p>
-          </div>
-          <div className="p-2.5 rounded-lg bg-emerald-500/10 text-emerald-400">
-            <CheckCircle2 className="w-5 h-5" />
-          </div>
-        </div>
-      </div>
-
-      {/* Filter Control Bar (Status, Priority, Category) */}
-      <div className="bg-slate-900/80 border border-slate-800 rounded-2xl p-4 shadow-lg flex flex-wrap items-center justify-between gap-4">
-        {/* Status Filters */}
-        <div className="flex items-center gap-2 overflow-x-auto">
-          <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-400 mr-2">Status:</span>
-          {(['All', 'Pending', 'In Progress', 'Completed', 'Deferred'] as const).map((status) => (
-            <button
-              key={status}
-              onClick={() => setStatusFilter(status)}
-              className={`px-3 py-1 rounded-lg text-xs font-semibold transition-all ${
-                statusFilter === status
-                  ? 'bg-teal-500/20 text-teal-300 border border-teal-500/40 shadow-sm'
-                  : 'bg-slate-950/60 border border-slate-800 text-slate-400 hover:text-white hover:bg-slate-800'
-              }`}
-            >
-              {status}
-            </button>
-          ))}
-        </div>
-
-        {/* Priority & Category Dropdowns */}
-        <div className="flex items-center gap-3">
-          <div className="flex items-center gap-2">
-            <Filter className="w-4 h-4 text-slate-400" />
-            <select
-              value={categoryFilter}
-              onChange={(e) => setCategoryFilter(e.target.value as InterventionCategory | 'All')}
-              className="bg-slate-950 border border-slate-700 rounded-xl px-3 py-1.5 text-xs text-white focus:outline-none focus:border-teal-500"
-            >
-              <option value="All">All Categories</option>
-              <option value="Clinical">Clinical</option>
-              <option value="Preventive Care">Preventive Care</option>
-              <option value="Transportation / SDOH">Transportation / SDOH</option>
-              <option value="Food Access / Community Support">Food Access / Community Support</option>
-              <option value="Healthcare Access">Healthcare Access</option>
-            </select>
-          </div>
-
-          <select
-            value={priorityFilter}
-            onChange={(e) => setPriorityFilter(e.target.value as InterventionPriority | 'All')}
-            className="bg-slate-950 border border-slate-700 rounded-xl px-3 py-1.5 text-xs text-white focus:outline-none focus:border-teal-500"
+        {/* Header Actions */}
+        <div className="flex items-center gap-2 self-start sm:self-auto">
+          <button
+            onClick={fetchMembersList}
+            disabled={loadingMembers}
+            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-slate-300 hover:text-white border border-slate-700 text-xs font-semibold transition-all disabled:opacity-50"
+            title="Reload latest cohort members (including newly uploaded data)"
           >
-            <option value="All">All Priorities</option>
-            <option value="Urgent">Urgent Priority</option>
-            <option value="High">High Priority</option>
-            <option value="Medium">Medium Priority</option>
-            <option value="Standard">Standard</option>
-          </select>
+            <RefreshCw className={`w-3.5 h-3.5 ${loadingMembers ? 'animate-spin' : ''}`} />
+            <span>{loadingMembers ? 'Refreshing Cohort...' : 'Refresh Cohort'}</span>
+          </button>
         </div>
       </div>
 
-      {/* Interventions List */}
-      <div className="space-y-3">
-        {loading ? (
-          <div className="bg-slate-900/80 border border-slate-800 rounded-2xl p-12 text-center space-y-3">
-            <Activity className="w-8 h-8 text-teal-400 animate-spin mx-auto" />
-            <p className="text-xs text-slate-400">Loading interventions...</p>
+      {/* Cohort Member Selector Toolbar */}
+      <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-4 lg:p-5 shadow-lg space-y-4">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+          {/* Member Dropdown */}
+          <div className="space-y-1.5 flex-1 max-w-xl">
+            <label className="block text-xs font-semibold text-slate-300 flex items-center gap-1.5">
+              <Users className="w-3.5 h-3.5 text-teal-400" />
+              Select Monitored Member from Cohort
+            </label>
+
+            {loadingMembers ? (
+              <div className="flex items-center gap-2 text-xs text-slate-400 py-2">
+                <Activity className="w-4 h-4 text-teal-400 animate-spin" />
+                <span>Loading available members...</span>
+              </div>
+            ) : membersError ? (
+              <div className="flex items-center gap-2 text-xs text-rose-400 py-1">
+                <AlertCircle className="w-4 h-4" />
+                <span>{membersError}</span>
+              </div>
+            ) : members.length === 0 ? (
+              <div className="text-xs text-slate-500 py-1 font-mono">
+                No members found in registry. Upload a dataset to begin.
+              </div>
+            ) : (
+              <div className="relative">
+                <select
+                  value={selectedMemberId}
+                  onChange={(e) => handleMemberChange(e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-700 focus:border-teal-500 rounded-xl px-3.5 py-2.5 text-xs lg:text-sm text-white font-mono focus:outline-none focus:ring-1 focus:ring-teal-500/40 transition-all cursor-pointer"
+                >
+                  {members.map((m) => (
+                    <option key={m.id} value={m.id}>
+                      {m.id} &bull; {m.age}y {m.gender} &bull; Risk: {m.riskSummary.overallRiskScore.toFixed(1)} ({m.riskSummary.riskLevel}) &bull; County FIPS: {m.countyFips || 'N/A'}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
           </div>
-        ) : interventions.length === 0 ? (
-          <div className="bg-slate-900/80 border border-slate-800 rounded-2xl p-12 text-center space-y-3">
-            <AlertCircle className="w-10 h-10 text-slate-500 mx-auto" />
-            <h3 className="text-sm font-bold text-white">No matching interventions</h3>
-            <p className="text-xs text-slate-400">Try clearing or adjusting the category, status, or priority filters.</p>
-          </div>
-        ) : (
-          interventions.map((intv) => (
-            <div
-              key={intv.id}
-              className="bg-slate-900/90 border border-slate-800 hover:border-slate-700 rounded-2xl p-5 shadow-lg transition-all space-y-3"
-            >
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                <div className="flex items-center gap-2.5">
-                  <span className="text-[10px] font-bold uppercase tracking-wider text-teal-400 bg-teal-500/10 px-2 py-0.5 rounded border border-teal-500/20">
-                    {intv.type}
-                  </span>
-                  <StatusBadge priority={intv.priority} />
-                  <StatusBadge status={intv.status} />
-                </div>
-                <div className="flex items-center gap-2 text-xs text-slate-400 font-mono">
-                  <Calendar className="w-3.5 h-3.5 text-slate-400" />
-                  <span>Due: <strong className="text-slate-300">{intv.dueDate}</strong></span>
-                </div>
+
+          {/* Quick Member Context Badge & Profile Link */}
+          {selectedMember && (
+            <div className="flex flex-wrap items-center gap-3 self-start md:self-end bg-slate-950/70 border border-slate-800 rounded-xl p-2.5 px-3.5 text-xs font-mono">
+              <div className="flex items-center gap-2">
+                <HeartPulse className="w-3.5 h-3.5 text-teal-400" />
+                <span className="text-white font-bold">{selectedMember.id}</span>
+                <RiskBadge level={selectedMember.riskSummary.riskLevel} />
+                <span className="text-slate-400">Score: <strong className="text-white">{selectedMember.riskSummary.overallRiskScore.toFixed(1)}</strong></span>
               </div>
 
-              <div className="flex flex-col md:flex-row md:items-start justify-between gap-4">
-                <div className="space-y-1 max-w-3xl">
-                  <h3 className="text-base font-bold text-white">{intv.title}</h3>
-                  <p className="text-xs text-slate-400 leading-relaxed">{intv.description}</p>
+              {selectedMember.countyFips && selectedMember.countyFips !== 'N/A' && (
+                <div className="flex items-center gap-1 text-slate-400 border-l border-slate-800 pl-3">
+                  <MapPin className="w-3 h-3 text-slate-500" />
+                  <span>FIPS {selectedMember.countyFips}</span>
                 </div>
+              )}
 
-                {/* Member Tag */}
-                <div className="shrink-0 p-3 rounded-xl bg-slate-950/60 border border-slate-800/80 flex items-center gap-3">
-                  <div className="w-8 h-8 rounded-lg bg-slate-800 text-teal-400 font-bold flex items-center justify-center text-xs">
-                    {intv.memberName.split(' ').map((n) => n[0]).join('')}
-                  </div>
-                  <div>
-                    <Link
-                      to={`/members/${intv.memberId}`}
-                      className="text-xs font-bold text-white hover:text-teal-400 transition-colors flex items-center gap-1"
-                    >
-                      <span>{intv.memberName}</span>
-                      <ArrowRight className="w-3 h-3 text-slate-400" />
-                    </Link>
-                    <div className="flex items-center gap-1.5 mt-0.5">
-                      <span className="text-[10px] font-mono text-slate-400">{intv.memberCode}</span>
-                      <RiskBadge level={intv.memberRiskLevel} size="sm" showIcon={false} />
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Action and Resolution Details */}
-              <div className="p-3 rounded-xl bg-slate-950/40 border border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
-                <div>
-                  <span className="text-slate-400 font-semibold">Immediate Protocol: </span>
-                  <span className="text-slate-200">{intv.actionRequired}</span>
-                </div>
-
-                <div className="flex items-center gap-2 shrink-0">
-                  {intv.status !== 'Completed' && (
-                    <button
-                      onClick={() => handleUpdateStatus(intv.id, 'Completed')}
-                      className="px-3 py-1 rounded-lg bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border border-emerald-500/30 text-xs font-semibold flex items-center gap-1.5 transition-colors"
-                    >
-                      <CheckCircle className="w-3.5 h-3.5" />
-                      <span>Complete Task</span>
-                    </button>
-                  )}
-                  {intv.status === 'Pending' && (
-                    <button
-                      onClick={() => handleUpdateStatus(intv.id, 'In Progress')}
-                      className="px-3 py-1 rounded-lg bg-sky-500/15 hover:bg-sky-500/25 text-sky-300 border border-sky-500/30 text-xs font-semibold flex items-center gap-1.5 transition-colors"
-                    >
-                      <PlayCircle className="w-3.5 h-3.5" />
-                      <span>Start Outreach</span>
-                    </button>
-                  )}
-                  <Link
-                    to={`/members/${intv.memberId}`}
-                    className="p-1.5 rounded-lg bg-slate-800 text-slate-300 hover:text-white hover:bg-slate-700 transition-colors"
-                    title="View Member Profile"
-                  >
-                    <ArrowRight className="w-4 h-4" />
-                  </Link>
-                </div>
-              </div>
+              <Link
+                to={`/members/${selectedMember.id}`}
+                className="inline-flex items-center gap-1 text-teal-400 hover:text-teal-300 text-[11px] font-sans font-semibold ml-auto hover:underline"
+              >
+                <span>Full Profile</span>
+                <ArrowRight className="w-3 h-3" />
+              </Link>
             </div>
-          ))
-        )}
+          )}
+        </div>
       </div>
 
-      {/* Interactive Modal: Create Intervention */}
-      <Modal
-        isOpen={isModalOpen}
-        onClose={() => setIsModalOpen(false)}
-        title="Schedule Care Intervention"
-        subtitle="Initiate a targeted clinical or SDOH protocol for a monitored member"
-      >
-        <form onSubmit={handleCreateIntervention} className="space-y-4">
-          <div>
-            <label className="block text-xs font-semibold text-slate-300 mb-1">
-              Select Monitored Member
-            </label>
-            <select
-              required
-              value={selectedMemberId}
-              onChange={(e) => setSelectedMemberId(e.target.value)}
-              className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-teal-500"
-            >
-              {members.map((m) => (
-                <option key={m.id} value={m.id}>
-                  {m.firstName} {m.lastName} ({m.memberCode}) — {m.riskSummary.riskLevel} Risk (Score: {m.riskSummary.overallRiskScore})
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div>
-            <label className="block text-xs font-semibold text-slate-300 mb-1">
-              Intervention Title
-            </label>
-            <input
-              type="text"
-              required
-              value={newTitle}
-              onChange={(e) => setNewTitle(e.target.value)}
-              placeholder="e.g. Non-Emergency Medical Transportation Setup"
-              className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-teal-500"
-            />
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs font-semibold text-slate-300 mb-1">
-                Intervention Category
-              </label>
-              <select
-                value={newType}
-                onChange={(e) => setNewType(e.target.value as InterventionCategory)}
-                className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-teal-500"
-              >
-                <option value="Clinical">Clinical</option>
-                <option value="Preventive Care">Preventive Care</option>
-                <option value="Transportation / SDOH">Transportation / SDOH</option>
-                <option value="Food Access / Community Support">Food Access / Community Support</option>
-                <option value="Healthcare Access">Healthcare Access</option>
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-xs font-semibold text-slate-300 mb-1">
-                Priority Tier
-              </label>
-              <select
-                value={newPriority}
-                onChange={(e) => setNewPriority(e.target.value as InterventionPriority)}
-                className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-teal-500"
-              >
-                <option value="Urgent">Urgent Priority</option>
-                <option value="High">High Priority</option>
-                <option value="Medium">Medium Priority</option>
-                <option value="Standard">Standard</option>
-              </select>
-            </div>
-          </div>
-
-          <div>
-            <label className="block text-xs font-semibold text-slate-300 mb-1">
-              Due Date
-            </label>
-            <input
-              type="date"
-              required
-              value={newDueDate}
-              onChange={(e) => setNewDueDate(e.target.value)}
-              className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-teal-500"
-            />
-          </div>
-
-          <div>
-            <label className="block text-xs font-semibold text-slate-300 mb-1">
-              Clinical / SDOH Rationale
-            </label>
-            <textarea
-              required
-              rows={2}
-              value={newDescription}
-              onChange={(e) => setNewDescription(e.target.value)}
-              placeholder="Reasoning and target objectives..."
-              className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-teal-500"
-            />
-          </div>
-
-          <div>
-            <label className="block text-xs font-semibold text-slate-300 mb-1">
-              Required Execution Step
-            </label>
-            <input
-              type="text"
-              required
-              value={newAction}
-              onChange={(e) => setNewAction(e.target.value)}
-              placeholder="e.g. Issue county transit voucher for specialist follow-up"
-              className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-teal-500"
-            />
-          </div>
-
-          <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-800">
-            <button
-              type="button"
-              onClick={() => setIsModalOpen(false)}
-              className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-400 hover:text-white transition-colors"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={submitting}
-              className="px-4 py-2 rounded-xl bg-teal-500 hover:bg-teal-400 text-slate-950 text-xs font-bold transition-all shadow-lg shadow-teal-500/20 disabled:opacity-50"
-            >
-              {submitting ? 'Dispatching...' : 'Dispatch Intervention'}
-            </button>
-          </div>
-        </form>
-      </Modal>
+      {/* Main RAG Evidence-Grounded Recommendations Section */}
+      {selectedMemberId ? (
+        <RagRecommendationPanel
+          memberId={selectedMemberId}
+          member={selectedMember}
+        />
+      ) : (
+        <div className="bg-slate-900/80 border border-slate-800 rounded-2xl p-12 text-center space-y-3">
+          <AlertCircle className="w-10 h-10 text-slate-500 mx-auto" />
+          <h3 className="text-sm font-bold text-white">No Member Selected</h3>
+          <p className="text-xs text-slate-400 max-w-sm mx-auto">
+            Please select a member from the dropdown above to view dynamic RAG evidence-grounded recommendations.
+          </p>
+        </div>
+      )}
     </div>
   );
 };

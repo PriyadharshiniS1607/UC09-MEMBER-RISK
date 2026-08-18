@@ -6,7 +6,8 @@ import {
   Activity, 
   AlertCircle,
   ArrowUpDown,
-  MapPin
+  MapPin,
+  Sparkles
 } from 'lucide-react';
 import { apiService } from '../services/api';
 import { Member, RiskLevel } from '../types';
@@ -275,15 +276,27 @@ export const Members: React.FC = () => {
                         <RiskBadge level={m.riskSummary.riskLevel} />
                       </td>
 
-                      {/* Action */}
+                      {/* Actions */}
                       <td className="py-3.5 px-4 text-right">
-                        <Link
-                          to={`/members/${m.id}`}
-                          className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-teal-500/10 hover:bg-teal-500/20 text-teal-300 border border-teal-500/30 text-xs font-semibold transition-all shadow-sm"
-                        >
-                          <span>Profile</span>
-                          <ArrowRight className="w-3 h-3" />
-                        </Link>
+                        <div className="flex items-center justify-end gap-2">
+                          <Link
+                            to={`/members/${m.id}`}
+                            className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700 text-xs font-semibold transition-all"
+                            title={`View profile for ${m.id}`}
+                          >
+                            <span>View</span>
+                            <ArrowRight className="w-3 h-3" />
+                          </Link>
+
+                          <Link
+                            to={`/interventions?memberId=${m.id}`}
+                            className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-teal-500/15 hover:bg-teal-500/25 text-teal-300 hover:text-teal-200 border border-teal-500/30 text-xs font-semibold transition-all shadow-sm"
+                            title={`Open RAG Interventions for ${m.id}`}
+                          >
+                            <Sparkles className="w-3 h-3 text-teal-400" />
+                            <span>Intervention</span>
+                          </Link>
+                        </div>
                       </td>
                     </tr>
                   );
