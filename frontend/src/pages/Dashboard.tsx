@@ -10,16 +10,20 @@ import {
   UploadCloud, 
   Mail, 
   CheckCircle2, 
-  AlertTriangle
+  AlertTriangle,
+  MapPin,
+  Stethoscope
 } from 'lucide-react';
 import { apiService } from '../services/api';
 import { Member, PopulationMetrics, User } from '../types';
 import { MetricCard } from '../components/common/MetricCard';
 import { RiskBadge } from '../components/common/RiskBadge';
-import { RiskComponentBar } from '../components/common/RiskComponentBar';
+import { USCountyRiskMap } from '../components/dashboard/USCountyRiskMap';
+import { RiskCategoryBarChart } from '../components/dashboard/RiskCategoryBarChart';
 
 export const Dashboard: React.FC = () => {
   const [metrics, setMetrics] = useState<PopulationMetrics | null>(null);
+  const [members, setMembers] = useState<Member[]>([]);
   const [highRiskMembers, setHighRiskMembers] = useState<Member[]>([]);
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
@@ -39,7 +43,9 @@ export const Dashboard: React.FC = () => {
       ]);
 
       setMetrics(metricsData);
-      setHighRiskMembers(membersData.slice(0, 5));
+      setMembers(membersData);
+      // Top high-priority members (top 6 by risk score)
+      setHighRiskMembers(membersData.slice(0, 6));
       setCurrentUser(user);
     } catch (err) {
       console.error('Error fetching live dashboard data:', err);
@@ -57,7 +63,7 @@ export const Dashboard: React.FC = () => {
     setDigestState({ sending: true, message: null, isError: false });
 
     try {
-      const topFlagged = highRiskMembers.slice(0, 3).map(m => ({
+      const topFlagged = highRiskMembers.slice(0, 3).map((m) => ({
         name: m.id,
         code: m.memberCode,
         score: Math.round(m.riskSummary.overallRiskScore),
@@ -82,7 +88,7 @@ export const Dashboard: React.FC = () => {
         message: res.message || 'Weekly cohort digest queued successfully.',
         isError: false,
       });
-      setTimeout(() => setDigestState(prev => ({ ...prev, message: null })), 6000);
+      setTimeout(() => setDigestState((prev) => ({ ...prev, message: null })), 6000);
     } catch (err: any) {
       console.error('Failed to send weekly digest:', err);
       setDigestState({
@@ -90,7 +96,7 @@ export const Dashboard: React.FC = () => {
         message: err?.response?.data?.detail || 'Failed to dispatch weekly digest notification.',
         isError: true,
       });
-      setTimeout(() => setDigestState(prev => ({ ...prev, message: null })), 6000);
+      setTimeout(() => setDigestState((prev) => ({ ...prev, message: null })), 6000);
     }
   };
 
@@ -105,18 +111,11 @@ export const Dashboard: React.FC = () => {
     );
   }
 
-  const populationRiskBreakdown = {
-    healthRiskScore: metrics.healthAverageScore || 62,
-    utilizationRiskScore: metrics.utilizationAverageScore || 54,
-    sdohRiskScore: metrics.sdohAverageScore || 59,
-    combinedRiskScore: metrics.averageRiskScore,
-  };
-
   const isCareOrAdmin = currentUser?.role === 'care_manager' || currentUser?.role === 'payer_admin';
 
   return (
-    <div className="space-y-6 max-w-7xl mx-auto">
-      {/* Executive Welcome Header */}
+    <div className="space-y-6 max-w-7xl mx-auto pb-10">
+      {/* Executive Welcome & Action Header */}
       <div className="relative rounded-2xl bg-gradient-to-r from-slate-900 via-slate-900 to-teal-950/30 p-6 lg:p-7 border border-slate-800 shadow-xl overflow-hidden">
         <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div>
@@ -167,22 +166,33 @@ export const Dashboard: React.FC = () => {
 
       {/* Digest Notification Alert */}
       {digestState.message && (
-        <div className={`p-3.5 rounded-xl border text-xs flex items-center justify-between animate-in fade-in ${
-          digestState.isError
-            ? 'bg-rose-500/10 border-rose-500/30 text-rose-300'
-            : 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300'
-        }`}>
+        <div
+          className={`p-3.5 rounded-xl border text-xs flex items-center justify-between animate-in fade-in ${
+            digestState.isError
+              ? 'bg-rose-500/10 border-rose-500/30 text-rose-300'
+              : 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300'
+          }`}
+        >
           <div className="flex items-center gap-2">
-            {digestState.isError ? <AlertTriangle className="w-4 h-4 text-rose-400" /> : <CheckCircle2 className="w-4 h-4 text-emerald-400" />}
+            {digestState.isError ? (
+              <AlertTriangle className="w-4 h-4 text-rose-400" />
+            ) : (
+              <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+            )}
             <span>{digestState.message}</span>
           </div>
-          <button onClick={() => setDigestState(prev => ({ ...prev, message: null }))} className="text-slate-400 hover:text-white p-1">
+          <button
+            onClick={() => setDigestState((prev) => ({ ...prev, message: null }))}
+            className="text-slate-400 hover:text-white p-1"
+          >
             &times;
           </button>
         </div>
       )}
 
-      {/* KPI Metric Cards Grid */}
+      {/* ============================================================ */}
+      {/* 1. RISK SUMMARY METRICS (Top Row KPI Cards)                  */}
+      {/* ============================================================ */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <MetricCard
           title="Total Monitored Members"
@@ -200,7 +210,7 @@ export const Dashboard: React.FC = () => {
           icon={Flame}
           accentColor="rose"
           progress={metrics.veryHighRiskPercentage}
-          trend={{ value: 'Urgent Care', direction: 'up', isPositive: false }}
+          trend={{ value: 'Urgent Priority', direction: 'up', isPositive: false }}
         />
 
         <MetricCard
@@ -220,161 +230,130 @@ export const Dashboard: React.FC = () => {
           icon={HeartPulse}
           accentColor="teal"
           progress={metrics.averageRiskScore}
-          trend={{ value: 'Population Score', direction: 'neutral' }}
+          trend={{ value: 'Cohort Mean', direction: 'neutral' }}
         />
       </div>
 
-      {/* Visual Analytics & High Priority Cohort Row */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Risk Distribution Visual */}
-        <div className="bg-slate-900/80 border border-slate-800 rounded-2xl p-5 shadow-lg flex flex-col justify-between space-y-4">
-          <div>
-            <div className="flex items-center justify-between pb-3 border-b border-slate-800">
-              <h3 className="text-sm font-bold text-white">Risk Tier Distribution</h3>
-              <span className="text-[11px] font-mono text-slate-400">{metrics.totalMembers} total</span>
-            </div>
-
-            <div className="mt-4 space-y-3.5">
-              {/* Very High Risk */}
-              <div className="space-y-1">
-                <div className="flex items-center justify-between text-xs">
-                  <span className="font-semibold text-purple-300 flex items-center gap-1.5">
-                    <span className="w-2.5 h-2.5 rounded-full bg-purple-500" /> Very High Risk
-                  </span>
-                  <span className="font-mono font-bold text-white">
-                    {metrics.veryHighRiskCount} ({metrics.veryHighRiskPercentage}%)
-                  </span>
-                </div>
-                <div className="h-2 w-full bg-slate-800 rounded-full overflow-hidden">
-                  <div className="h-full bg-purple-500 rounded-full" style={{ width: `${metrics.veryHighRiskPercentage}%` }} />
-                </div>
-              </div>
-
-              {/* High Risk */}
-              <div className="space-y-1">
-                <div className="flex items-center justify-between text-xs">
-                  <span className="font-semibold text-rose-400 flex items-center gap-1.5">
-                    <span className="w-2.5 h-2.5 rounded-full bg-rose-500" /> High Risk
-                  </span>
-                  <span className="font-mono font-bold text-white">
-                    {metrics.highRiskCount} ({metrics.highRiskPercentage}%)
-                  </span>
-                </div>
-                <div className="h-2 w-full bg-slate-800 rounded-full overflow-hidden">
-                  <div className="h-full bg-rose-500 rounded-full" style={{ width: `${metrics.highRiskPercentage}%` }} />
-                </div>
-              </div>
-
-              {/* Medium Risk */}
-              <div className="space-y-1">
-                <div className="flex items-center justify-between text-xs">
-                  <span className="font-semibold text-amber-400 flex items-center gap-1.5">
-                    <span className="w-2.5 h-2.5 rounded-full bg-amber-500" /> Medium Risk
-                  </span>
-                  <span className="font-mono font-bold text-white">
-                    {metrics.mediumRiskCount} ({metrics.mediumRiskPercentage}%)
-                  </span>
-                </div>
-                <div className="h-2 w-full bg-slate-800 rounded-full overflow-hidden">
-                  <div className="h-full bg-amber-500 rounded-full" style={{ width: `${metrics.mediumRiskPercentage}%` }} />
-                </div>
-              </div>
-
-              {/* Low Risk */}
-              <div className="space-y-1">
-                <div className="flex items-center justify-between text-xs">
-                  <span className="font-semibold text-emerald-400 flex items-center gap-1.5">
-                    <span className="w-2.5 h-2.5 rounded-full bg-emerald-500" /> Low Risk
-                  </span>
-                  <span className="font-mono font-bold text-white">
-                    {metrics.lowRiskCount} ({metrics.lowRiskPercentage}%)
-                  </span>
-                </div>
-                <div className="h-2 w-full bg-slate-800 rounded-full overflow-hidden">
-                  <div className="h-full bg-emerald-500 rounded-full" style={{ width: `${metrics.lowRiskPercentage}%` }} />
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div className="pt-3 border-t border-slate-800 text-[11px] text-slate-400 flex items-center justify-between">
-            <span>Ensemble Cutoffs: Low &lt; 30 &bull; Med 30-55 &bull; High 55-75 &bull; V.High &gt; 75</span>
-          </div>
+      {/* ============================================================ */}
+      {/* VISUALIZATION GRID: 2. RISK DISTRIBUTION + 3. US COUNTY MAP */}
+      {/* ============================================================ */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-stretch">
+        {/* 3. US COUNTY RISK MAP (Hero Visualization - 7 cols on lg, 8 cols on xl) */}
+        <div className="lg:col-span-7 xl:col-span-8 flex flex-col">
+          <USCountyRiskMap members={members} />
         </div>
 
-        {/* High-Priority Member Roster */}
-        <div className="lg:col-span-2 bg-slate-900/80 border border-slate-800 rounded-2xl p-5 shadow-lg flex flex-col justify-between">
-          <div>
-            <div className="flex items-center justify-between pb-3 border-b border-slate-800">
-              <div className="flex items-center gap-2">
-                <h3 className="text-sm font-bold text-white">High-Priority Members</h3>
-                <span className="px-2 py-0.5 rounded-full text-[10px] bg-rose-500/20 text-rose-300 font-bold">Top Risk Cohort</span>
-              </div>
-              <Link to="/members" className="text-xs text-teal-400 hover:text-teal-300 font-semibold flex items-center gap-1">
-                <span>View Full Registry &rarr;</span>
-              </Link>
-            </div>
-
-            <div className="mt-3 divide-y divide-slate-800/80">
-              {highRiskMembers.map((m) => {
-                const topDriver = m.shapDrivers[0];
-                return (
-                  <div key={m.id} className="py-2.5 flex items-center justify-between gap-3 hover:bg-slate-800/30 px-2 rounded-lg transition-colors">
-                    <div className="flex items-center gap-3 min-w-0">
-                      <div className="w-8 h-8 rounded-lg bg-slate-800 border border-slate-700 text-teal-400 font-mono font-bold flex items-center justify-center text-xs shrink-0">
-                        {m.id.replace(/^M0*/, '#')}
-                      </div>
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-2">
-                          <Link to={`/members/${m.id}`} className="text-xs font-bold text-white hover:text-teal-400 truncate">
-                            {m.id}
-                          </Link>
-                          <span className="text-[11px] text-slate-400">{m.age} yrs &bull; {m.gender}</span>
-                          <span className="text-[11px] text-slate-500 font-mono">FIPS: {m.countyFips}</span>
-                        </div>
-                        <p className="text-[11px] text-slate-400 truncate mt-0.5">
-                          Top Risk Driver: <span className="font-mono text-teal-300">{topDriver?.feature || 'Chronic Disease Burden'}</span> ({topDriver ? `${topDriver.shapValue > 0 ? '+' : ''}${topDriver.shapValue.toFixed(2)}` : 'N/A'})
-                        </p>
-                      </div>
-                    </div>
-
-                    <div className="flex items-center gap-2.5 shrink-0">
-                      <RiskBadge level={m.riskSummary.riskLevel} score={m.riskSummary.overallRiskScore} size="sm" />
-                      <Link
-                        to={`/members/${m.id}`}
-                        className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition-colors"
-                        title="View Profile"
-                      >
-                        <ArrowRight className="w-3.5 h-3.5" />
-                      </Link>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-
-          <div className="pt-3 border-t border-slate-800 text-[11px] text-slate-400 flex items-center justify-between">
-            <span>Ranked by ML Stacking Ensemble Prediction Score</span>
-            <Link to="/members" className="text-teal-400 hover:underline">
-              Search all {metrics.totalMembers} members &rarr;
-            </Link>
-          </div>
+        {/* 2. RISK CATEGORY DISTRIBUTION (Bar Chart - 5 cols on lg, 4 cols on xl) */}
+        <div className="lg:col-span-5 xl:col-span-4 flex flex-col">
+          <RiskCategoryBarChart metrics={metrics} />
         </div>
       </div>
 
-      {/* Risk Component Comparison Section */}
-      <div className="bg-slate-900/80 border border-slate-800 rounded-2xl p-5 shadow-lg space-y-3">
-        <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+      {/* ============================================================ */}
+      {/* 4. HIGH-PRIORITY MEMBERS TABLE                               */}
+      {/* ============================================================ */}
+      <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-5 lg:p-6 shadow-xl space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-800">
           <div>
-            <h3 className="text-sm font-bold text-white">Population Risk Component Vectors</h3>
+            <div className="flex items-center gap-2">
+              <h3 className="text-sm font-bold text-white tracking-tight">
+                High-Priority Members Cohort
+              </h3>
+              <span className="px-2 py-0.5 rounded-full text-[10px] bg-rose-500/20 text-rose-300 font-bold border border-rose-500/30">
+                Top Elevated Risk
+              </span>
+            </div>
             <p className="text-xs text-slate-400 mt-0.5">
-              Population-wide mean scores across Health Diagnosis, Historical Utilization, and County-Level SDOH indicators
+              Highest-risk members identified by the stacking ensemble prediction pipeline.
             </p>
           </div>
+
+          <Link
+            to="/members"
+            className="text-xs text-teal-400 hover:text-teal-300 font-semibold inline-flex items-center gap-1.5 self-start sm:self-auto bg-teal-500/10 hover:bg-teal-500/20 px-3 py-1.5 rounded-lg border border-teal-500/30 transition-all"
+          >
+            <span>View All Members ({metrics.totalMembers})</span>
+            <ArrowRight className="w-3.5 h-3.5" />
+          </Link>
         </div>
 
-        <RiskComponentBar breakdown={populationRiskBreakdown} />
+        {/* High-Priority Members Table */}
+        <div className="overflow-x-auto">
+          <table className="w-full text-left border-collapse">
+            <thead>
+              <tr className="border-b border-slate-800 text-[11px] font-semibold text-slate-400 uppercase tracking-wider bg-slate-950/40">
+                <th className="py-2.5 px-3.5">Member ID</th>
+                <th className="py-2.5 px-3.5">County FIPS</th>
+                <th className="py-2.5 px-3.5">Risk Category</th>
+                <th className="py-2.5 px-3.5">Risk Score</th>
+                <th className="py-2.5 px-3.5">Top Risk Driver</th>
+                <th className="py-2.5 px-3.5 text-right">Action</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-800/60 text-xs">
+              {highRiskMembers.map((m) => {
+                const topDriver = m.shapDrivers?.[0];
+                const driverText = topDriver
+                  ? `${topDriver.feature} (${topDriver.shapValue > 0 ? '+' : ''}${topDriver.shapValue.toFixed(2)})`
+                  : m.riskSummary?.topDrivers?.[0]?.factor || 'Clinical Burden';
+
+                return (
+                  <tr key={m.id} className="hover:bg-slate-800/30 transition-colors">
+                    <td className="py-3 px-3.5 font-bold text-white">
+                      <Link
+                        to={`/members/${m.id}`}
+                        className="hover:text-teal-400 transition-colors font-mono"
+                      >
+                        {m.memberCode || m.id}
+                      </Link>
+                    </td>
+
+                    <td className="py-3 px-3.5">
+                      <span className="inline-flex items-center gap-1.5 text-slate-300 font-mono text-[11px]">
+                        <MapPin className="w-3 h-3 text-teal-400" />
+                        {m.countyFips || m.rawBackendData?.county_fips || 'N/A'}
+                      </span>
+                    </td>
+
+                    <td className="py-3 px-3.5">
+                      <RiskBadge level={m.riskSummary?.riskLevel || 'High'} size="sm" />
+                    </td>
+
+                    <td className="py-3 px-3.5 font-mono font-bold text-teal-300">
+                      {m.riskSummary?.overallRiskScore?.toFixed(1) ?? 'N/A'}
+                      <span className="text-[10px] text-slate-500 font-normal"> / 100</span>
+                    </td>
+
+                    <td className="py-3 px-3.5 text-slate-300">
+                      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-slate-800/80 border border-slate-700 text-[11px] font-mono text-teal-300 truncate max-w-xs">
+                        <Stethoscope className="w-3 h-3 text-teal-400 shrink-0" />
+                        <span className="truncate">{driverText}</span>
+                      </span>
+                    </td>
+
+                    <td className="py-3 px-3.5 text-right">
+                      <Link
+                        to={`/members/${m.id}`}
+                        className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-teal-500/10 hover:bg-teal-500/20 text-teal-300 border border-teal-500/30 text-xs font-semibold transition-all"
+                      >
+                        <span>Details</span>
+                        <ArrowRight className="w-3 h-3" />
+                      </Link>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+
+        {/* Footer info note */}
+        <div className="pt-2 flex items-center justify-between text-[11px] text-slate-400">
+          <span>Displaying top priority members from the current PostgreSQL cohort.</span>
+          <Link to="/members" className="text-teal-400 hover:underline">
+            View full registry ({metrics.totalMembers} total members) &rarr;
+          </Link>
+        </div>
       </div>
     </div>
   );

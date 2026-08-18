@@ -9,11 +9,16 @@
     "preview": "vite preview --port 5173 --host 127.0.0.1"
   },
   "dependencies": {
+    "@types/d3-geo": "^3.1.1",
+    "@types/topojson-client": "^3.1.5",
     "axios": "^1.7.9",
+    "d3-geo": "^3.1.1",
     "lucide-react": "^0.475.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
-    "react-router-dom": "^6.29.0"
+    "react-router-dom": "^6.29.0",
+    "topojson-client": "^3.1.0",
+    "us-atlas": "^3.0.1"
   },
   "devDependencies": {
     "@types/react": "^18.3.18",
