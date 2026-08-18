@@ -1,12 +1,28 @@
-import joblib
+
 import pandas as pd
 
 from app.utils.preprocessing import preprocess_input
 
+from pathlib import Path
+import joblib
 
-ENSEMBLE_PATH = "ml_models/UC09_3Model_Stacking_Ensemble.pkl"
 
+# backend/
+BASE_DIR = Path(__file__).resolve().parents[2]
 
+# backend/ml_models/UC09_3Model_Stacking_Ensemble.pkl
+ENSEMBLE_PATH = (
+    BASE_DIR
+    / "ml_models"
+    / "UC09_3Model_Stacking_Ensemble.pkl"
+)
+
+if not ENSEMBLE_PATH.exists():
+    raise FileNotFoundError(
+        f"ML model not found: {ENSEMBLE_PATH}"
+    )
+
+stacking_package = joblib.load(ENSEMBLE_PATH)
 # Load complete stacking package
 stacking_package = joblib.load(ENSEMBLE_PATH)
 

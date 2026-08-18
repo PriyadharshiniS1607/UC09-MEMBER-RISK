@@ -1,31 +1,6 @@
 from __future__ import annotations
 
-import sys
-from pathlib import Path
 from typing import Any
-
-
-# ============================================================
-# PROJECT ROOT
-# ============================================================
-
-# rag_service.py
-#     ↓
-# backend/
-#     ↓
-# project root
-#
-# Path:
-# UC09-MEMBER-RISK/
-#     backend/
-#     app/
-#     services/
-#     rag_service.py
-
-PROJECT_ROOT = Path(__file__).resolve().parents[3]
-
-if str(PROJECT_ROOT) not in sys.path:
-    sys.path.insert(0, str(PROJECT_ROOT))
 
 
 # ============================================================
@@ -36,36 +11,40 @@ def get_member_recommendations(
     member_id: str,
 ) -> dict[str, Any]:
     """
-    Generate intervention recommendations for one member.
+    Get or generate member intervention recommendations.
 
     Workflow:
 
-        Existing database
-                |
-                v
-        Member + RiskPrediction + SHAP
-                |
-                v
-        RAG context
-                |
-                v
-        FAISS retrieval
-                |
-                v
-        Gemini
-                |
-                v
-        Validated recommendations
+        API
+         |
+         v
+        RAG Service
+         |
+         v
+        Intervention Service
+         |
+         +----------------------+
+         |                      |
+         v                      v
+    Existing DB             New intervention
+         |                      |
+         v                      v
+    Return result          Run RAG/Gemini
+                                |
+                                v
+                         Save Intervention
+                                |
+                                v
+                              Commit
+                                |
+                                v
+                          Send email
+                                |
+                                v
+                         Return result
 
-    This service does NOT:
-
-        - upload CSV
-        - run prediction
-        - calculate SHAP
-        - create a new prediction
-
-    POST /predict is responsible for creating the prediction
-    and SHAP information in the database.
+    Existing interventions are returned directly and do not
+    trigger another RAG generation or email.
     """
 
     member_id = member_id.strip()
@@ -75,11 +54,31 @@ def get_member_recommendations(
             "member_id is required."
         )
 
-    # Import after PROJECT_ROOT has been added to sys.path.
-    from rag.intervention.recommendation_generator import (
-        generate_recommendations_for_member,
+    # --------------------------------------------------------
+    # Import here to avoid unnecessary import/circular issues.
+    # --------------------------------------------------------
+
+    from app.services.intervention_service import (
+        get_or_generate_recommendations,
     )
 
-    return generate_recommendations_for_member(
-        member_id
+    intervention_result = (
+        get_or_generate_recommendations(
+            member_id
+        )
     )
+
+    # --------------------------------------------------------
+    # Keep the response format expected by
+    # recommendation.py
+    #
+    # recommendation.py currently expects:
+    #
+    # {
+    #     "recommendation_result": {...}
+    # }
+    # --------------------------------------------------------
+
+    return {
+        "recommendation_result": intervention_result,
+    }
