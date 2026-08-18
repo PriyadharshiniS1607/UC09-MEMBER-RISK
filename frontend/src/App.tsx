@@ -7,9 +7,9 @@ import { Members } from './pages/Members';
 import { MemberDetails } from './pages/MemberDetails';
 import { Interventions } from './pages/Interventions';
 import { Upload } from './pages/Upload';
-import { mockApiService } from './services/api';
+import { UserManagement } from './pages/UserManagement';
+import { apiService } from './services/api';
 import { User } from './types';
-import { MOCK_USERS } from './mock/mockData';
 
 export const App: React.FC = () => {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
@@ -17,14 +17,16 @@ export const App: React.FC = () => {
 
   useEffect(() => {
     const initAuth = async () => {
-      const stored = await mockApiService.getCurrentUser();
-      if (stored) {
-        setCurrentUser(stored);
-      } else {
-        // Auto-initialize with default CMO for immediate ease of review if preferred, or prompt login
-        setCurrentUser(MOCK_USERS[0]);
+      try {
+        const stored = await apiService.getCurrentUser();
+        if (stored) {
+          setCurrentUser(stored);
+        }
+      } catch (err) {
+        console.error('Session initialization error:', err);
+      } finally {
+        setAuthInitialized(true);
       }
-      setAuthInitialized(true);
     };
 
     initAuth();
@@ -35,6 +37,7 @@ export const App: React.FC = () => {
   };
 
   const handleLogout = () => {
+    apiService.logout();
     setCurrentUser(null);
   };
 
@@ -52,7 +55,13 @@ export const App: React.FC = () => {
         {/* Public Login Route */}
         <Route 
           path="/login" 
-          element={<Login onLoginSuccess={handleLoginSuccess} />} 
+          element={
+            currentUser ? (
+              <Navigate to="/dashboard" replace />
+            ) : (
+              <Login onLoginSuccess={handleLoginSuccess} />
+            )
+          } 
         />
 
         {/* Protected App Shell Layout */}
@@ -72,6 +81,7 @@ export const App: React.FC = () => {
           <Route path="members/:id" element={<MemberDetails />} />
           <Route path="interventions" element={<Interventions />} />
           <Route path="upload" element={<Upload />} />
+          <Route path="admin/users" element={<UserManagement />} />
         </Route>
 
         {/* Catch-all */}

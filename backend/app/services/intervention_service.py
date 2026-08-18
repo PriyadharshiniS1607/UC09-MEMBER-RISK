@@ -1,104 +1,53 @@
-
 from __future__ import annotations
 
-import os
-from datetime import datetime, timezone
 from typing import Any
 
 from app.database.connection import SessionLocal
 from app.database.models import (
-    EmailNotification,
-    Intervention,
     Member,
     RiskPrediction,
-)
-from app.services.email_notification.service import (
-    send_intervention_email,
+    Intervention,
 )
 
-
-# ============================================================
-# EMAIL CONFIGURATION
-# ============================================================
-
-PAYER_VIEWER_EMAIL = os.getenv(
-    "PAYER_VIEWER_EMAIL"
-)
-
-
-# ============================================================
-# GET OR GENERATE RECOMMENDATIONS
-# ============================================================
 
 def get_or_generate_recommendations(
     member_id: str,
 ) -> dict[str, Any]:
     """
-    Get an existing intervention or generate a new one.
+    Return recommendations for a member.
 
     Workflow:
 
-        Member
-          |
-          v
-        Latest RiskPrediction
-          |
-          v
-        Existing RAG Intervention?
-          |
-          +---- YES ---> Return existing intervention
-          |
-          +---- NO
-                 |
-                 v
-          Run RAG/Gemini
-                 |
-                 v
-          Create Intervention
-                 |
-                 v
-              COMMIT
-                 |
-                 v
-        Create EmailNotification
-                 |
-                 v
-          Send Email
-             /       \
-          SENT       FAILED
-            |          |
-            +----+-----+
-                 |
-                 v
-             Return API
+        GET /recommendations/{member_id}
+                    |
+                    v
+            Find member
+                    |
+                    v
+            Find latest prediction
+                    |
+                    v
+        Existing RAG intervention?
+              /            \
+            YES             NO
+             |               |
+             v               v
+        Fetch from DB      Run RAG
+                             |
+                             v
+                         Save to DB
+                             |
+                             v
+                       Return result
 
-    Important:
+    Recommendations are cached per prediction.
 
-    1. RAG is executed only when the latest prediction does
-       not already have an RAG intervention.
+    If a RAG intervention already exists for the member's
+    latest prediction, Gemini/RAG is NOT called again.
 
-    2. Existing interventions are returned directly.
-
-    3. Existing interventions do not trigger another email.
-
-    4. The Intervention is committed before email sending.
-
-    5. If email sending fails, the Intervention remains saved.
-
-    6. EmailNotification records SENT/FAILED status.
-
-    7. This service uses send_intervention_email() directly.
-       It does NOT use EmailService.
+    A new RAG recommendation is generated only when the
+    member has a newer prediction without an intervention.
     """
-
-    # ========================================================
-    # 1. VALIDATE MEMBER ID
-    # ========================================================
-
-    if not isinstance(member_id, str):
-        raise ValueError(
-            "member_id must be a string."
-        )
 
     member_id = member_id.strip()
 
@@ -110,10 +59,9 @@ def get_or_generate_recommendations(
     db = SessionLocal()
 
     try:
-
-        # ====================================================
-        # 2. FIND MEMBER
-        # ====================================================
+        # ==================================================
+        # 1. FIND MEMBER
+        # ==================================================
 
         member = (
             db.query(Member)
@@ -128,9 +76,9 @@ def get_or_generate_recommendations(
                 f"Member '{member_id}' not found."
             )
 
-        # ====================================================
-        # 3. FIND LATEST PREDICTION
-        # ====================================================
+        # ==================================================
+        # 2. FIND LATEST PREDICTION
+        # ==================================================
 
         prediction = (
             db.query(RiskPrediction)
@@ -150,9 +98,9 @@ def get_or_generate_recommendations(
                 "Run POST /predict first."
             )
 
-        # ====================================================
-        # 4. CHECK EXISTING RAG INTERVENTION
-        # ====================================================
+        # ==================================================
+        # 3. CHECK EXISTING RAG INTERVENTION
+        # ==================================================
 
         existing = (
             db.query(Intervention)
@@ -167,9 +115,9 @@ def get_or_generate_recommendations(
             .first()
         )
 
-        # ====================================================
-        # 5. RETURN EXISTING INTERVENTION
-        # ====================================================
+        # ==================================================
+        # 4. EXISTING RESULT
+        # ==================================================
 
         if existing is not None:
 
@@ -177,12 +125,8 @@ def get_or_generate_recommendations(
                 "member_id": member_id,
 
                 "risk_summary": {
-                    "risk_score": (
-                        prediction.risk_score
-                    ),
-                    "risk_category": (
-                        prediction.risk_category
-                    ),
+                    "risk_score": prediction.risk_score,
+                    "risk_category": prediction.risk_category,
                 },
 
                 "recommendations": (
@@ -205,9 +149,11 @@ def get_or_generate_recommendations(
                 ),
             }
 
-        # ====================================================
-        # 6. GENERATE NEW RAG RECOMMENDATION
-        # ====================================================
+        # ==================================================
+        # 5. NO EXISTING RESULT
+        #
+        # Run RAG only for this prediction.
+        # ==================================================
 
         from rag.intervention.recommendation_generator import (
             generate_recommendations_for_member,
@@ -223,9 +169,9 @@ def get_or_generate_recommendations(
                 "an invalid result."
             )
 
-        # ====================================================
-        # 7. EXTRACT recommendation_result
-        # ====================================================
+        # ==================================================
+        # 6. EXTRACT RECOMMENDATION RESULT
+        # ==================================================
 
         recommendation_result = result.get(
             "recommendation_result",
@@ -240,15 +186,9 @@ def get_or_generate_recommendations(
                 "RAG recommendation result is invalid."
             )
 
-        # ====================================================
-        # 8. EXTRACT RECOMMENDATIONS
-        # ====================================================
-
-        recommendations = (
-            recommendation_result.get(
-                "recommendations",
-                [],
-            )
+        recommendations = recommendation_result.get(
+            "recommendations",
+            [],
         )
 
         if not isinstance(
@@ -257,25 +197,9 @@ def get_or_generate_recommendations(
         ):
             recommendations = []
 
-        # Keep only dictionary recommendations.
-        recommendations = [
-            recommendation
-            for recommendation in recommendations
-            if isinstance(
-                recommendation,
-                dict,
-            )
-        ]
-
-        # ====================================================
-        # 9. EXTRACT RISK SUMMARY
-        # ====================================================
-
-        risk_summary = (
-            recommendation_result.get(
-                "risk_summary",
-                {},
-            )
+        risk_summary = recommendation_result.get(
+            "risk_summary",
+            {},
         )
 
         if not isinstance(
@@ -284,60 +208,48 @@ def get_or_generate_recommendations(
         ):
             risk_summary = {}
 
-        # ====================================================
-        # 10. ENSURE RISK SUMMARY HAS PREDICTION DATA
-        # ====================================================
+        # ==================================================
+        # 7. DETERMINE INTERVENTION PRIORITY
+        # ==================================================
 
-        risk_score = risk_summary.get(
-            "risk_score",
-            prediction.risk_score,
-        )
-
-        risk_category = risk_summary.get(
-            "risk_category",
-            prediction.risk_category,
-        )
-
-        risk_summary = {
-            **risk_summary,
-            "risk_score": risk_score,
-            "risk_category": risk_category,
-        }
-
-        # ====================================================
-        # 11. DETERMINE INTERVENTION PRIORITY
-        # ====================================================
-
-        priorities: list[str] = []
+        priorities = []
 
         for recommendation in recommendations:
+
+            if not isinstance(
+                recommendation,
+                dict,
+            ):
+                continue
 
             priority = recommendation.get(
                 "priority"
             )
 
-            if priority is None:
-                continue
-
-            priorities.append(
-                str(priority).strip().lower()
-            )
+            if priority:
+                priorities.append(
+                    str(priority).lower()
+                )
 
         if "high" in priorities:
+
             intervention_priority = "HIGH"
 
         elif "medium" in priorities:
+
             intervention_priority = "MEDIUM"
 
         elif "low" in priorities:
+
             intervention_priority = "LOW"
 
         else:
+
             intervention_priority = None
 
-        # ====================================================
-        # 12. CREATE INTERVENTION
-        # ====================================================
+        # ==================================================
+        # 8. SAVE RAG INTERVENTION
+        # ==================================================
 
         intervention = Intervention(
             member_id=member.id,
@@ -357,146 +269,35 @@ def get_or_generate_recommendations(
 
         db.add(intervention)
 
-        # ====================================================
-        # 13. COMMIT INTERVENTION BEFORE EMAIL
-        # ====================================================
-
         db.commit()
 
         db.refresh(intervention)
 
-        # ====================================================
-        # 14. PREPARE EMAIL
-        # ====================================================
-
-        recipient_email = (
-            PAYER_VIEWER_EMAIL or ""
-        )
-
-        email_subject = (
-            f"New Member Intervention - "
-            f"{member_id} - "
-            f"{risk_category} Risk"
-        )
-
-        # ====================================================
-        # 15. CREATE EMAIL NOTIFICATION
-        # ====================================================
-
-        email_notification = EmailNotification(
-            member_id=member.id,
-
-            recipient_email=recipient_email,
-
-            subject=email_subject,
-
-            notification_type=(
-                "NEW_INTERVENTION"
-            ),
-
-            status="PENDING",
-        )
-
-        db.add(email_notification)
-
-        db.commit()
-
-        db.refresh(email_notification)
-
-        # ====================================================
-        # 16. SEND EMAIL
-        # ====================================================
-
-        email_status = "PENDING"
-        email_error = None
+        # ==================================================
+        # 9. AUTOMATIC EMAIL NOTIFICATION (NON-BLOCKING)
+        #
+        # Send automated email to PAYER_VIEWER_EMAIL.
+        # Failures in email delivery will NOT break the
+        # recommendation API response.
+        # ==================================================
 
         try:
-
-            email_payload = {
-                "member_id": member_id,
-
-                "risk_summary": risk_summary,
-
-                "recommendations": (
-                    recommendations
-                ),
-
-                "intervention_id": (
-                    intervention.id
-                ),
-
-                "prediction_id": (
-                    prediction.id
-                ),
-            }
-
-            # IMPORTANT:
-            #
-            # Do NOT use:
-            #
-            #     EmailService()
-            #
-            # Do NOT use:
-            #
-            #     send_intervention_notification()
-            #
-            # The email service exposes:
-            #
-            #     send_intervention_email()
-            #
-
-            send_intervention_email(
-                email_payload
+            from app.services.email import EmailService
+            EmailService.send_rag_intervention_email(
+                member_id=member_id,
+                risk_score=prediction.risk_score,
+                risk_category=prediction.risk_category,
+                recommendations=recommendations,
+            )
+        except Exception as email_err:
+            import logging
+            logging.getLogger("InterventionService").warning(
+                f"Automated email notification failed: {email_err}"
             )
 
-            # =================================================
-            # 17. EMAIL SUCCESS
-            # =================================================
-
-            email_notification.status = "SENT"
-
-            email_notification.sent_at = (
-                datetime.now(timezone.utc)
-            )
-
-            email_notification.error_message = None
-
-            email_status = "SENT"
-
-        except Exception as exc:
-
-            # =================================================
-            # 18. EMAIL FAILURE
-            # =================================================
-            #
-            # IMPORTANT:
-            #
-            # The Intervention was already committed.
-            #
-            # Therefore email failure must NOT delete it.
-            #
-
-            email_notification.status = "FAILED"
-
-            email_notification.error_message = (
-                str(exc)[:2000]
-            )
-
-            email_status = "FAILED"
-
-            email_error = str(exc)
-
-        # ====================================================
-        # 19. SAVE EMAIL STATUS
-        # ====================================================
-
-        db.commit()
-
-        db.refresh(email_notification)
-
-        # ====================================================
-        # 20. RETURN RESULT
-        # ====================================================
+        # ==================================================
+        # 10. RETURN SAVED RESULT
+        # ==================================================
 
         return {
             "member_id": member_id,
@@ -518,37 +319,19 @@ def get_or_generate_recommendations(
                 if intervention.created_at
                 else None
             ),
-
-            "email_notification": {
-                "notification_id": (
-                    email_notification.id
-                ),
-
-                "recipient": (
-                    email_notification.recipient_email
-                ),
-
-                "status": email_status,
-
-                "error": email_error,
-            },
         }
 
     except Exception:
-
-        # ====================================================
-        # 21. DATABASE ROLLBACK
-        # ====================================================
+        # ----------------------------------------------
+        # Important:
+        # If anything fails after a DB transaction has
+        # started, rollback before closing the session.
+        # ----------------------------------------------
 
         db.rollback()
 
         raise
 
     finally:
-
-        # ====================================================
-        # 22. CLOSE DATABASE SESSION
-        # ====================================================
-
         db.close()
 

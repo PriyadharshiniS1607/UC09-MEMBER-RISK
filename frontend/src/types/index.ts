@@ -16,6 +16,8 @@ export interface ShapDriver {
   feature: string;
   value: string;
   shapValue: number; // e.g. +0.34 or -0.12
+  impact?: number;
+  direction?: 'increases_risk' | 'decreases_risk' | 'neutral' | string;
   category: 'Health' | 'Utilization' | 'SDOH';
   description: string;
 }
@@ -35,11 +37,11 @@ export interface SdohIndicators {
 }
 
 export interface UtilizationMetrics {
+  totalEncounters: number;
   hospitalizationsLast12m: number;
   erVisitsLast12m: number;
-  outpatientVisitsLast12m: number;
-  telehealthVisitsLast12m: number;
-  readmissionCount30d: number;
+  medicationCount: number;
+  preventiveCareGap: number;
 }
 
 export interface RiskBreakdown {
@@ -79,33 +81,30 @@ export interface RiskSummary {
 
 export interface ChronicCondition {
   name: string;
-  diagnosedDate: string;
-  severity: 'Mild' | 'Moderate' | 'Severe';
-  icd10Code: string;
+  diagnosedDate?: string;
+  severity?: 'Mild' | 'Moderate' | 'Severe';
+  icd10Code?: string;
 }
 
 export interface ClinicalVitals {
-  bloodPressure: string;
-  heartRateBpm: number;
-  bmi: number;
-  hba1c?: number;
-  cholesterolMgl?: number;
-  lastUpdated: string;
+  diabetes: boolean;
+  hypertension: boolean;
+  heartDisease: boolean;
+  copd: boolean;
+  obesity: boolean;
+  cancer: boolean;
+  chronicConditionCount: number;
 }
 
 export interface Member {
   id: string;
   memberCode: string;
-  firstName: string;
-  lastName: string;
+  firstName?: string;
+  lastName?: string;
   age: number;
-  gender: 'Male' | 'Female' | 'Other';
-  dob: string;
-  contactNumber: string;
-  email: string;
-  address: string;
-  insurancePlan: string;
-  primaryCarePhysician: string;
+  gender: string;
+  stateFips: string;
+  countyFips: string;
   chronicConditions: ChronicCondition[];
   vitals: ClinicalVitals;
   riskSummary: RiskSummary;
@@ -115,8 +114,76 @@ export interface Member {
   shapDrivers: ShapDriver[];
   recommendedInterventions: RecommendedIntervention[];
   activeInterventionsCount: number;
-  assignedCareManager: string;
-  enrollmentStatus: 'Active' | 'Under Review' | 'Discharged';
+  assignedCareManager?: string;
+  rawBackendData?: BackendMember;
+}
+
+export interface BackendMember {
+  id: number;
+  member_id: string;
+  age: number | null;
+  gender: string | null;
+  state_fips: string | null;
+  county_fips: string | null;
+  diabetes: number | null;
+  hypertension: number | null;
+  heart_disease: number | null;
+  copd: number | null;
+  obesity: number | null;
+  cancer: number | null;
+  chronic_condition_count: number | null;
+  total_encounters: number | null;
+  ed_visits: number | null;
+  hospitalizations: number | null;
+  medication_count: number | null;
+  preventive_care_gap: number | null;
+  ep_pov150: number | null;
+  ep_unemp: number | null;
+  ep_hburd: number | null;
+  ep_nohsdp: number | null;
+  ep_uninsur: number | null;
+  ep_age65: number | null;
+  ep_age17: number | null;
+  ep_disabl: number | null;
+  ep_sngpnt: number | null;
+  ep_limeng: number | null;
+  ep_minrty: number | null;
+  ep_munit: number | null;
+  ep_mobile: number | null;
+  ep_crowd: number | null;
+  ep_noveh: number | null;
+  ep_groupq: number | null;
+  rpl_themes: number | null;
+  diabetes_adjprev: number | null;
+  obesity_adjprev: number | null;
+  csmoking_adjprev: number | null;
+  lpa_adjprev: number | null;
+  bphigh_adjprev: number | null;
+  highchol_adjprev: number | null;
+  chd_adjprev: number | null;
+  stroke_adjprev: number | null;
+  copd_adjprev: number | null;
+  casthma_adjprev: number | null;
+  cancer_adjprev: number | null;
+  depression_adjprev: number | null;
+  mhlth_adjprev: number | null;
+  phlth_adjprev: number | null;
+  ghlth_adjprev: number | null;
+  arthritis_adjprev: number | null;
+  disability_adjprev: number | null;
+  indeplive_adjprev: number | null;
+  children_low_access_pct: number | null;
+  no_vehicle_low_access_pct: number | null;
+  low_income_low_access_pct: number | null;
+  low_food_access_pct: number | null;
+  seniors_low_access_pct: number | null;
+  risk_score: number;
+  risk_category: string;
+  top_risk_drivers: BackendShapDriver[];
+  prediction_id?: number | null;
+  prediction_date?: string | null;
+  created_at?: string | null;
+  updated_at?: string | null;
 }
 
 export interface Intervention {
@@ -152,15 +219,52 @@ export interface PopulationMetrics {
   pendingInterventionsCount: number;
   completedInterventionsCount: number;
   averageRiskScore: number;
-  projectedReadmissionReductionPct: number;
+  healthAverageScore: number;
+  utilizationAverageScore: number;
+  sdohAverageScore: number;
+}
+
+export type BackendRole = 'payer_admin' | 'clinical_analyst' | 'care_manager' | 'payer_viewer';
+
+export type UserRole = BackendRole | 'Care Manager' | 'Chief Medical Officer' | 'Clinical Nurse Specialist' | 'Administrator' | string;
+
+export interface BackendShapDriver {
+  feature: string;
+  value: string | number;
+  shap_value: number;
+  impact?: number;
+  direction?: 'increases_risk' | 'decreases_risk' | 'neutral' | string;
+  description?: string;
+}
+
+export interface BackendPredictionItem {
+  prediction_id: number;
+  member_id: string;
+  risk_score: number;
+  risk_category: string;
+  shap_explanation_id?: number;
+  top_risk_drivers: BackendShapDriver[];
+}
+
+export interface PredictionResponse {
+  message: string;
+  requested_by: {
+    id: number;
+    username: string;
+    role: string;
+  };
+  total_members: number;
+  predictions: BackendPredictionItem[];
 }
 
 export interface User {
-  id: string;
+  id: string | number;
+  username?: string;
   name: string;
   email: string;
-  role: 'Care Manager' | 'Chief Medical Officer' | 'Clinical Nurse Specialist' | 'Administrator';
-  hospitalAffiliation: string;
+  role: UserRole;
+  is_active?: boolean;
+  hospitalAffiliation?: string;
   avatarUrl?: string;
 }
 
@@ -179,13 +283,61 @@ export interface UploadCsvResponse {
   uploadedAt: string;
   batchId: string;
   detectedHeaders?: string[];
-  status: 'Validated' | 'Ready for Model Scoring' | 'Failed';
+  status: 'Validated' | 'Ready for Model Scoring' | 'Completed' | 'Failed';
   processingNote?: string;
+  predictions?: BackendPredictionItem[];
 }
 
 export interface UploadProgressState {
-  stage: 'idle' | 'validating' | 'uploading' | 'parsing_metadata' | 'success' | 'error';
+  stage: 'idle' | 'validating' | 'uploading' | 'parsing_metadata' | 'scoring' | 'success' | 'error';
   progressPercentage: number;
   currentMessage?: string;
   error?: string;
+}
+
+// ============================================================
+// RAG RECOMMENDATION TYPES
+// ============================================================
+
+export interface RagEvidenceSource {
+  source: string;
+  domain?: string;
+  topic?: string;
+  document?: string;
+  chunk_id: string;
+  score?: number;
+}
+
+export interface RagRecommendation {
+  priority?: 'high' | 'medium' | 'low' | string;
+  feature?: string;
+  concept?: string;
+  domain?: string;
+  shap_impact?: number;
+  rationale?: string;
+  recommended_action?: string;
+  next_step?: string;
+  evidence_basis?: string;
+  evidence_sources?: RagEvidenceSource[];
+  // Support alternative legacy keys
+  title?: string;
+  category?: string;
+  description?: string;
+  action_required?: string;
+  due_date?: string;
+}
+
+export interface RagRecommendationResponse {
+  member_id: string;
+  risk_summary?: {
+    risk_score?: number;
+    risk_category?: string;
+    summary?: string;
+  };
+  recommendations: RagRecommendation[];
+  source?: string;
+  status?: string;
+  intervention_id?: number;
+  prediction_id?: number;
+  created_at?: string;
 }

@@ -20,7 +20,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ currentUser, onLogout }) =
         <Header currentUser={currentUser} />
         
         <main className="flex-1 p-6 lg:p-8 overflow-y-auto max-w-7xl w-full mx-auto">
-          <Outlet />
+          <Outlet context={{ currentUser }} />
         </main>
       </div>
     </div>

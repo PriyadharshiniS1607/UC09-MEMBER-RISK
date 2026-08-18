@@ -10,7 +10,7 @@ import {
   HeartHandshake,
   UploadCloud
 } from 'lucide-react';
-import { mockApiService } from '../../services/api';
+import { apiService } from '../../services/api';
 import { User } from '../../types';
 
 interface SidebarProps {
@@ -22,38 +22,55 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentUser, onLogout }) => {
   const navigate = useNavigate();
 
   const handleLogoutClick = () => {
-    mockApiService.logout();
+    apiService.logout();
     onLogout();
     navigate('/login');
   };
 
+  const isViewer = currentUser?.role === 'payer_viewer';
+  const isAdmin = currentUser?.role === 'payer_admin';
+
   const navItems = [
     {
-      label: 'Executive Dashboard',
+      label: 'Population Overview',
       path: '/dashboard',
       icon: LayoutDashboard,
-      badge: 'Overview',
+      badge: 'Live',
+      visible: true,
     },
     {
-      label: 'Member Population',
+      label: 'Member Registry',
       path: '/members',
       icon: Users,
-      badge: 'Registry',
+      badge: 'Cohort',
+      visible: true,
     },
     {
       label: 'Clinical Interventions',
       path: '/interventions',
       icon: ClipboardList,
-      badge: 'Active',
+      badge: 'Tasks',
       highlightBadge: false,
+      visible: true,
     },
     {
-      label: 'Data Ingestion (CSV)',
+      label: 'Data Ingestion',
       path: '/upload',
       icon: UploadCloud,
-      badge: 'CSV',
-      highlightBadge: true,
+      badge: isViewer ? 'Restricted' : 'ML Model',
+      highlightBadge: !isViewer,
+      visible: true,
+      restricted: isViewer,
     },
+    ...(isAdmin ? [{
+      label: 'User Management',
+      path: '/admin/users',
+      icon: Users,
+      badge: 'Admin',
+      highlightBadge: true,
+      visible: true,
+      restricted: false,
+    }] : []),
   ];
 
   return (
@@ -142,9 +159,9 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentUser, onLogout }) => {
               </div>
             )}
             <div className="overflow-hidden">
-              <p className="text-xs font-semibold text-white truncate">{currentUser.name}</p>
-              <p className="text-[11px] text-teal-400 truncate">{currentUser.role}</p>
-              <p className="text-[10px] text-slate-400 truncate">{currentUser.hospitalAffiliation}</p>
+              <p className="text-xs font-semibold text-white truncate">{currentUser.name || currentUser.username}</p>
+              <p className="text-[10px] text-teal-400 font-mono uppercase truncate">{currentUser.role?.replace(/_/g, ' ')}</p>
+              <p className="text-[10px] text-slate-400 truncate">{currentUser.hospitalAffiliation || 'Payer Analytics'}</p>
             </div>
           </div>
         )}

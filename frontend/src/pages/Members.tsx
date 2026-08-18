@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { 
   Search, 
@@ -6,12 +6,12 @@ import {
   Activity, 
   AlertCircle,
   ArrowUpDown,
-  MapPin
+  MapPin,
+  Sparkles
 } from 'lucide-react';
-import { mockApiService } from '../services/api';
-import { Member, RiskLevel, InterventionPriority } from '../types';
+import { apiService } from '../services/api';
+import { Member, RiskLevel } from '../types';
 import { RiskBadge } from '../components/common/RiskBadge';
-import { StatusBadge } from '../components/common/StatusBadge';
 
 export const Members: React.FC = () => {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -23,29 +23,37 @@ export const Members: React.FC = () => {
 
   const [searchQuery, setSearchQuery] = useState(initialSearch);
   const [selectedRisk, setSelectedRisk] = useState<RiskLevel | 'All'>(initialRisk);
-  const [selectedSdohTier, setSelectedSdohTier] = useState<string>('All');
+  const [selectedFips, setSelectedFips] = useState<string>('All');
   const [sortBy, setSortBy] = useState<string>('riskScore_desc');
+
+  const availableFipsList = useMemo(() => {
+    const fipsSet = new Set<string>();
+    members.forEach((m: Member) => {
+      if (m.countyFips && m.countyFips !== 'N/A') fipsSet.add(m.countyFips);
+    });
+    return Array.from(fipsSet).sort();
+  }, [members]);
 
   useEffect(() => {
     const fetchMembers = async () => {
       setLoading(true);
       try {
-        const data = await mockApiService.getMembers({
+        const data = await apiService.getMembers({
           search: searchQuery,
-          riskLevel: selectedRisk,
-          sdohTier: selectedSdohTier,
+          riskCategory: selectedRisk,
+          countyFips: selectedFips !== 'All' ? selectedFips : undefined,
           sortBy: sortBy,
         });
         setMembers(data);
       } catch (err) {
-        console.error('Error loading members:', err);
+        console.error('Error loading real members:', err);
       } finally {
         setLoading(false);
       }
     };
 
     fetchMembers();
-  }, [searchQuery, selectedRisk, selectedSdohTier, sortBy]);
+  }, [searchQuery, selectedRisk, selectedFips, sortBy]);
 
   const handleRiskTabChange = (risk: RiskLevel | 'All') => {
     setSelectedRisk(risk);
@@ -68,24 +76,24 @@ export const Members: React.FC = () => {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 max-w-7xl mx-auto">
       {/* Page Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <div className="flex items-center gap-2">
-            <h1 className="text-2xl font-extrabold text-white tracking-tight">Member Population Registry</h1>
+            <h1 className="text-2xl lg:text-3xl font-extrabold text-white tracking-tight">Member Registry</h1>
             <span className="px-2.5 py-0.5 rounded-full bg-slate-800 border border-slate-700 text-teal-400 font-mono text-xs font-bold">
-              {members.length} Monitored Members
+              {members.length} Active Records
             </span>
           </div>
-          <p className="text-xs text-slate-400 mt-1">
-            Multidisciplinary cohort registry integrated across clinical, utilization, and county-level SDOH risk factors.
+          <p className="text-xs lg:text-sm text-slate-400 mt-1">
+            Cohort population records sourced from PostgreSQL with ML Stacking predictions &amp; SHAP feature drivers.
           </p>
         </div>
       </div>
 
-      {/* Task 5: Controls Toolbar (Search, Risk Filter, SDOH Filter, Sorting) */}
-      <div className="bg-slate-900/80 border border-slate-800 rounded-2xl p-4 shadow-lg space-y-4">
+      {/* Controls Toolbar (Search, Risk Filter, FIPS Filter, Sorting) */}
+      <div className="bg-slate-900/80 border border-slate-800 rounded-2xl p-4 shadow-lg space-y-3.5">
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
           {/* Search Input */}
           <div className="relative md:col-span-1">
@@ -94,24 +102,23 @@ export const Members: React.FC = () => {
               type="text"
               value={searchQuery}
               onChange={(e) => handleSearchChange(e.target.value)}
-              placeholder="Search member name, ID (e.g. MBR-98241), county, or FIPS..."
-              className="w-full bg-slate-950/80 border border-slate-700 rounded-xl pl-10 pr-4 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-teal-500 focus:ring-1 focus:ring-teal-500/50 transition-all"
+              placeholder="Search by Member ID (e.g. M00001) or FIPS code..."
+              className="w-full bg-slate-950/80 border border-slate-700 rounded-xl pl-10 pr-4 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-teal-500 focus:ring-1 focus:ring-teal-500/50 transition-all font-mono"
             />
           </div>
 
-          {/* SDOH Risk Filter */}
+          {/* County FIPS Filter */}
           <div className="flex items-center gap-2">
             <MapPin className="w-4 h-4 text-slate-400 shrink-0" />
             <select
-              value={selectedSdohTier}
-              onChange={(e) => setSelectedSdohTier(e.target.value)}
-              className="w-full bg-slate-950/80 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-teal-500"
+              value={selectedFips}
+              onChange={(e) => setSelectedFips(e.target.value)}
+              className="w-full bg-slate-950/80 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-teal-500 font-mono"
             >
-              <option value="All">All SDOH Vulnerability Tiers</option>
-              <option value="Very High">Very High SDOH (SVI &gt; 0.85)</option>
-              <option value="High">High SDOH (SVI 0.70 - 0.85)</option>
-              <option value="Moderate">Moderate SDOH (SVI 0.40 - 0.70)</option>
-              <option value="Low">Low SDOH (SVI &lt; 0.40)</option>
+              <option value="All">All County FIPS Locations</option>
+              {availableFipsList.map(fips => (
+                <option key={fips} value={fips}>County FIPS {fips}</option>
+              ))}
             </select>
           </div>
 
@@ -125,10 +132,7 @@ export const Members: React.FC = () => {
             >
               <option value="riskScore_desc">Sort: Risk Score (High to Low)</option>
               <option value="riskScore_asc">Sort: Risk Score (Low to High)</option>
-              <option value="name_asc">Sort: Member Name (A to Z)</option>
-              <option value="healthRisk_desc">Sort: Health Risk (Highest)</option>
-              <option value="utilizationRisk_desc">Sort: Utilization Risk (Highest)</option>
-              <option value="sdohRisk_desc">Sort: SDOH Risk (Highest)</option>
+              <option value="age_desc">Sort: Member Age (Oldest First)</option>
             </select>
           </div>
         </div>
@@ -142,7 +146,7 @@ export const Members: React.FC = () => {
             <button
               key={tier}
               onClick={() => handleRiskTabChange(tier)}
-              className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+              className={`px-3 py-1 rounded-lg text-xs font-semibold transition-all ${
                 selectedRisk === tier
                   ? tier === 'Very High'
                     ? 'bg-purple-950/80 text-purple-200 border border-purple-500/50 shadow-sm'
@@ -156,25 +160,25 @@ export const Members: React.FC = () => {
                   : 'bg-slate-950/50 border border-slate-800 text-slate-400 hover:text-white hover:bg-slate-800/50'
               }`}
             >
-              {tier === 'All' ? 'All Tiers' : `${tier} Risk`}
+              {tier === 'All' ? 'All Tiers' : `${tier}`}
             </button>
           ))}
         </div>
       </div>
 
-      {/* Task 5: Members Table with Health, Utilization, SDOH Risk Columns */}
+      {/* Members Registry Table */}
       <div className="bg-slate-900/80 border border-slate-800 rounded-2xl overflow-hidden shadow-lg">
         {loading ? (
           <div className="p-12 text-center space-y-3">
             <Activity className="w-8 h-8 text-teal-400 animate-spin mx-auto" />
-            <p className="text-xs text-slate-400">Filtering population registry...</p>
+            <p className="text-xs text-slate-400">Loading cohort from PostgreSQL...</p>
           </div>
         ) : members.length === 0 ? (
           <div className="p-12 text-center space-y-3">
             <AlertCircle className="w-10 h-10 text-slate-500 mx-auto" />
             <h3 className="text-sm font-bold text-white">No matching members found</h3>
             <p className="text-xs text-slate-400 max-w-sm mx-auto">
-              Try adjusting your search terms, risk tier tabs, or SDOH vulnerability filters.
+              No members matched the filter criteria.
             </p>
           </div>
         ) : (
@@ -182,115 +186,117 @@ export const Members: React.FC = () => {
             <table className="w-full text-left border-collapse">
               <thead>
                 <tr className="border-b border-slate-800 bg-slate-950/50 text-[11px] font-bold uppercase tracking-wider text-slate-400">
-                  <th className="py-3.5 px-4">Member Info & Geography</th>
-                  <th className="py-3.5 px-4 text-center">Combined Score</th>
-                  <th className="py-3.5 px-4">Risk Category</th>
-                  <th className="py-3.5 px-4">Health Risk</th>
-                  <th className="py-3.5 px-4">Utilization Risk</th>
-                  <th className="py-3.5 px-4">SDOH Risk (FIPS)</th>
-                  <th className="py-3.5 px-4">Priority</th>
-                  <th className="py-3.5 px-4 text-right">Action</th>
+                  <th className="py-3 px-4">Member Identifier</th>
+                  <th className="py-3 px-3">Demographics</th>
+                  <th className="py-3 px-3">Geographic FIPS</th>
+                  <th className="py-3 px-3">Chronic Diagnoses</th>
+                  <th className="py-3 px-3">Utilization</th>
+                  <th className="py-3 px-3">Top SHAP Risk Driver</th>
+                  <th className="py-3 px-3 text-center">Risk Score</th>
+                  <th className="py-3 px-3">Risk Tier</th>
+                  <th className="py-3 px-4 text-right">Action</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-800/70 text-xs">
                 {members.map((m) => {
-                  // Primary intervention priority for member
-                  const topPriority: InterventionPriority = 
-                    m.riskSummary.riskLevel === 'Very High' ? 'Urgent' : 
-                    m.riskSummary.riskLevel === 'High' ? 'High' : 
-                    m.riskSummary.riskLevel === 'Medium' ? 'Medium' : 'Standard';
-
+                  const topDriver = m.shapDrivers[0];
                   return (
                     <tr
                       key={m.id}
                       className="hover:bg-slate-800/40 transition-colors group"
                     >
-                      {/* Member Info & Geography */}
-                      <td className="py-4 px-4">
-                        <div className="flex items-center gap-3">
-                          <div className="w-9 h-9 rounded-xl bg-slate-800 text-teal-400 font-bold flex items-center justify-center border border-slate-700 text-xs shrink-0 group-hover:border-teal-500/40 transition-colors">
-                            {m.firstName[0]}{m.lastName[0]}
-                          </div>
-                          <div>
-                            <Link
-                              to={`/members/${m.id}`}
-                              className="font-bold text-white hover:text-teal-400 transition-colors block text-sm"
-                            >
-                              {m.firstName} {m.lastName}
-                            </Link>
-                            <div className="flex items-center gap-2 text-[11px] text-slate-400 mt-0.5">
-                              <span className="font-mono">{m.memberCode}</span>
-                              <span>&bull;</span>
-                              <span>{m.sdohData.countyName} ({m.sdohData.countyFips})</span>
-                            </div>
-                          </div>
-                        </div>
+                      {/* Member ID */}
+                      <td className="py-3.5 px-4">
+                        <Link
+                          to={`/members/${m.id}`}
+                          className="font-mono font-bold text-teal-300 hover:text-teal-200 text-sm block"
+                        >
+                          {m.id}
+                        </Link>
                       </td>
 
-                      {/* Combined Risk Score */}
-                      <td className="py-4 px-4 text-center">
-                        <span className="font-mono font-extrabold text-base text-white">
-                          {m.riskSummary.overallRiskScore}
+                      {/* Demographics */}
+                      <td className="py-3.5 px-3">
+                        <span className="text-white font-medium">{m.age} yrs</span>
+                        <span className="text-slate-400 block text-[11px]">{m.gender}</span>
+                      </td>
+
+                      {/* Geographic FIPS */}
+                      <td className="py-3.5 px-3">
+                        <span className="font-mono text-slate-300 text-xs">County: {m.countyFips}</span>
+                        <span className="text-slate-500 block text-[10px] font-mono">State: {m.stateFips}</span>
+                      </td>
+
+                      {/* Chronic Diagnoses */}
+                      <td className="py-3.5 px-3">
+                        <span className="text-white font-semibold">{m.vitals.chronicConditionCount} conditions</span>
+                        <span className="text-slate-400 block text-[11px] truncate max-w-[140px]">
+                          {m.chronicConditions.length > 0 ? m.chronicConditions.map(c => c.name.replace('Type 2 ', '')).join(', ') : 'None diagnosed'}
+                        </span>
+                      </td>
+
+                      {/* Utilization */}
+                      <td className="py-3.5 px-3">
+                        <span className="text-slate-300 font-mono">
+                          {m.utilizationData.hospitalizationsLast12m} Hosp &bull; {m.utilizationData.erVisitsLast12m} ED
+                        </span>
+                        <span className="text-slate-500 block text-[10px] font-mono">
+                          {m.utilizationData.medicationCount} Meds
+                        </span>
+                      </td>
+
+                      {/* Top SHAP Risk Driver */}
+                      <td className="py-3.5 px-3">
+                        {topDriver ? (
+                          <div>
+                            <span className="font-mono text-slate-200 text-[11px] block truncate max-w-[140px]">
+                              {topDriver.feature}
+                            </span>
+                            <span className={`text-[10px] font-mono font-bold ${
+                              topDriver.shapValue > 0 ? 'text-rose-400' : 'text-emerald-400'
+                            }`}>
+                              {topDriver.shapValue > 0 ? `+${topDriver.shapValue.toFixed(2)}` : topDriver.shapValue.toFixed(2)}
+                            </span>
+                          </div>
+                        ) : (
+                          <span className="text-slate-500 text-[11px]">N/A</span>
+                        )}
+                      </td>
+
+                      {/* Risk Score */}
+                      <td className="py-3.5 px-3 text-center">
+                        <span className="font-mono font-bold text-sm text-white">
+                          {m.riskSummary.overallRiskScore.toFixed(1)}
                         </span>
                         <span className="text-[10px] text-slate-500 block">/ 100</span>
                       </td>
 
-                      {/* 4-Tier Risk Category */}
-                      <td className="py-4 px-4">
+                      {/* Risk Tier */}
+                      <td className="py-3.5 px-3">
                         <RiskBadge level={m.riskSummary.riskLevel} />
                       </td>
 
-                      {/* Health Risk Score */}
-                      <td className="py-4 px-4">
-                        <div className="space-y-1">
-                          <div className="flex items-center justify-between text-[11px]">
-                            <span className="font-mono font-bold text-rose-400">{m.riskBreakdown.healthRiskScore}</span>
-                          </div>
-                          <div className="h-1.5 w-20 bg-slate-800 rounded-full overflow-hidden">
-                            <div className="h-full bg-rose-500 rounded-full" style={{ width: `${m.riskBreakdown.healthRiskScore}%` }} />
-                          </div>
-                        </div>
-                      </td>
-
-                      {/* Utilization Risk Score */}
-                      <td className="py-4 px-4">
-                        <div className="space-y-1">
-                          <div className="flex items-center justify-between text-[11px]">
-                            <span className="font-mono font-bold text-amber-400">{m.riskBreakdown.utilizationRiskScore}</span>
-                          </div>
-                          <div className="h-1.5 w-20 bg-slate-800 rounded-full overflow-hidden">
-                            <div className="h-full bg-amber-500 rounded-full" style={{ width: `${m.riskBreakdown.utilizationRiskScore}%` }} />
-                          </div>
-                        </div>
-                      </td>
-
-                      {/* SDOH Risk Score */}
-                      <td className="py-4 px-4">
-                        <div className="space-y-1">
-                          <div className="flex items-center justify-between text-[11px]">
-                            <span className="font-mono font-bold text-sky-400">{m.riskBreakdown.sdohRiskScore}</span>
-                            <span className="text-[10px] text-slate-500 font-mono">SVI {m.sdohData.sviScore}</span>
-                          </div>
-                          <div className="h-1.5 w-20 bg-slate-800 rounded-full overflow-hidden">
-                            <div className="h-full bg-sky-500 rounded-full" style={{ width: `${m.riskBreakdown.sdohRiskScore}%` }} />
-                          </div>
-                        </div>
-                      </td>
-
-                      {/* Intervention Priority */}
-                      <td className="py-4 px-4">
-                        <StatusBadge priority={topPriority} />
-                      </td>
-
                       {/* Actions */}
-                      <td className="py-4 px-4 text-right">
-                        <Link
-                          to={`/members/${m.id}`}
-                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-teal-500/10 hover:bg-teal-500/20 text-teal-300 border border-teal-500/30 text-xs font-semibold transition-all group-hover:border-teal-500/60 shadow-sm"
-                        >
-                          <span>View Profile</span>
-                          <ArrowRight className="w-3.5 h-3.5" />
-                        </Link>
+                      <td className="py-3.5 px-4 text-right">
+                        <div className="flex items-center justify-end gap-2">
+                          <Link
+                            to={`/members/${m.id}`}
+                            className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700 text-xs font-semibold transition-all"
+                            title={`View profile for ${m.id}`}
+                          >
+                            <span>View</span>
+                            <ArrowRight className="w-3 h-3" />
+                          </Link>
+
+                          <Link
+                            to={`/interventions?memberId=${m.id}`}
+                            className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-teal-500/15 hover:bg-teal-500/25 text-teal-300 hover:text-teal-200 border border-teal-500/30 text-xs font-semibold transition-all shadow-sm"
+                            title={`Open RAG Interventions for ${m.id}`}
+                          >
+                            <Sparkles className="w-3 h-3 text-teal-400" />
+                            <span>Intervention</span>
+                          </Link>
+                        </div>
                       </td>
                     </tr>
                   );
